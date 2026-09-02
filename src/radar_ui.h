@@ -10,7 +10,8 @@ namespace radar_ui {
 
 enum class Status {
     Ok,          // fresh data
-    Connecting,  // no WiFi yet, or no successful fetch yet
+    NoWifi,      // not associated with the access point
+    Connecting,  // associated, but no successful fetch yet
     Stale,       // last good fetch is getting old
     NoData,      // last good fetch is too old to trust; list cleared
 };
@@ -32,6 +33,10 @@ struct Frame {
     // Preformatted METAR summary, e.g. "RIX SSW 4kt 19C BKN". Empty until the
     // first report arrives.
     const char* weather;
+
+    // Signal strength in dBm, 0 when not associated. Shown in the header so a
+    // weak spot is visible without a serial cable.
+    int rssiDbm;
 
     // Home, as an offset from the radar centre. homeValid is false when no home
     // is configured.

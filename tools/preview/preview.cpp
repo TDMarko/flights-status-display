@@ -16,6 +16,10 @@
 
 static const geo::LatLon RIGA{56.9496, 24.1052};
 
+// The preview must build from a clean checkout, where secrets.h does not exist,
+// so it uses its own synthetic home rather than the real HOME_LAT/HOME_LON.
+static const geo::LatLon PREVIEW_HOME{57.0000, 24.2000};
+
 static std::string readFile(const std::string& path) {
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) { fprintf(stderr, "cannot open %s\n", path.c_str()); return {}; }
@@ -42,7 +46,8 @@ static void writePPM(const Arduino_GFX& g, const std::string& path) {
 static void render(const std::string& out, const adsb::Snapshot& snapIn, int rangeKm,
                    const char* cityName, radar_ui::Status status, const char* clock,
                    const char* metar = "", const char* overheadCs = nullptr,
-                   const char* overheadHex = nullptr, float sweepDeg = 55.0f) {
+                   const char* overheadHex = nullptr, float sweepDeg = 55.0f,
+                   int rssi = -58) {
     // Look the city up so the preview draws the same airport the firmware would.
     const City* city = &CITIES[0];
     for (int i = 0; i < CITY_COUNT; i++)
@@ -77,9 +82,10 @@ static void render(const std::string& out, const adsb::Snapshot& snapIn, int ran
                       (float)geo::distanceKm(centre, airport),
                       (float)geo::bearingDeg(centre, airport),
                       metar,
+                      rssi,
                       true,
-                      (float)geo::distanceKm(centre, {HOME_LAT, HOME_LON}),
-                      (float)geo::bearingDeg(centre, {HOME_LAT, HOME_LON}),
+                      (float)geo::distanceKm(centre, PREVIEW_HOME),
+                      (float)geo::bearingDeg(centre, PREVIEW_HOME),
                       overheadHex,
                       overheadCs,
                       sweepDeg};

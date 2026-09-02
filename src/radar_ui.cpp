@@ -46,7 +46,8 @@ void chip(Arduino_GFX* g, int x, int y, int w, int h, int size, const char* s) {
 
 const char* statusBadge(Status s) {
     switch (s) {
-        case Status::Connecting: return "WIFI";
+        case Status::NoWifi:     return "NO WIFI";
+        case Status::Connecting: return "SYNC";
         case Status::Stale:      return "STALE";
         case Status::NoData:     return "NO DATA";
         default:                 return nullptr;
@@ -135,12 +136,38 @@ void drawSweep(Arduino_GFX* g, const Frame& f) {
 // selected range cannot scribble across the header or the side panel.
 void plotInScope(Arduino_GFX* g, int x, int y, uint16_t colour) {
     int dx = x - RADAR_CX, dy = y - RADAR_CY;
-    if (dx * dx + dy * dy > RADAR_R * RADAR_R) return;
+    if (dx * dx + dy * dy > RADAR_DISC_R * RADAR_DISC_R) return;
     if (y < HEADER_H) return;
     g->drawPixel(x, y, colour);
 }
 
 constexpr double DASH_ON = 3.0, DASH_OFF = 3.0;
+
+// Half-width of the green face at a given screen row.
+double discHalfWidth(int y) {
+    double dy = (double)(y - RADAR_CY);
+    double v = (double)RADAR_DISC_R * RADAR_DISC_R - dy * dy;
+    return v > 0.0 ? sqrt(v) : 0.0;
+}
+
+// Places a size-1 label beside a point on the radar, keeping every pixel of it
+// on the green face. Black ink on the black bezel would simply disappear, so a
+// label that cannot fit is not drawn at all.
+bool placeLabel(int x, int y, int w, int& lx, int& ly) {
+    ly = y + 2;
+    // Keep clear of the ring-distance strip below the east axis.
+    if (ly + CH_H1 > RADAR_CY + 2 && ly < RADAR_CY + CH_H1 + 4) ly = RADAR_CY - CH_H1 - 4;
+    if (ly < HEADER_H + 1) ly = HEADER_H + 1;
+    if (ly > 170 - CH_H1) ly = 170 - CH_H1;
+
+    double hw = fmin(discHalfWidth(ly), discHalfWidth(ly + CH_H1 - 1));
+    int left = RADAR_CX - (int)hw, right = RADAR_CX + (int)hw;
+
+    lx = x + 7;
+    if (lx + w > right) lx = x - 7 - w;   // flip to the inboard side
+    if (lx < left) lx = left;
+    return lx >= left && lx + w <= right;
+}
 
 // Walks one segment pixel by pixel, painting the "on" part of the dash pattern.
 // `phase` carries across segments so the dashes stay evenly spaced along the
@@ -194,14 +221,10 @@ void drawAirport(Arduino_GFX* g, const Frame& f) {
     double fromCentre = hypot((double)(x - RADAR_CX), (double)(y - RADAR_CY));
     if (fromCentre < 18.0) return;
 
-    int lx = x + 7, ly = y + 2;
-    int w = textW(f.airportCode, 1);
-    if (lx + w > RADAR_CX + RADAR_R + 4) lx = x - 7 - w;
-    if (lx < 1) lx = 1;
-    if (ly + CH_H1 > RADAR_CY + 2 && ly < RADAR_CY + CH_H1 + 4) ly = RADAR_CY - CH_H1 - 4;
-    if (ly < HEADER_H + 1) ly = HEADER_H + 1;
-    if (ly > 170 - CH_H1) ly = 170 - CH_H1;
-    text(g, lx, ly, 1, C_AIRPORT, f.airportCode);
+    int lx, ly;
+    if (placeLabel(x, y, textW(f.airportCode, 1), lx, ly)) {
+        text(g, lx, ly, 1, C_AIRPORT, f.airportCode);
+    }
 }
 
 // Home is a blue diamond. Red marks a place aircraft go; blue marks where you
@@ -228,14 +251,10 @@ void drawHome(Arduino_GFX* g, const Frame& f) {
     double fromCentre = hypot((double)(x - RADAR_CX), (double)(y - RADAR_CY));
     if (fromCentre < 18.0) return;   // the label would sit on the centre marker
 
-    int lx = x + 8, ly = y + 2;
-    int w = textW(HOME_LABEL, 1);
-    if (lx + w > RADAR_CX + RADAR_R + 4) lx = x - 8 - w;
-    if (lx < 1) lx = 1;
-    if (ly + CH_H1 > RADAR_CY + 2 && ly < RADAR_CY + CH_H1 + 4) ly = RADAR_CY - CH_H1 - 4;
-    if (ly < HEADER_H + 1) ly = HEADER_H + 1;
-    if (ly > 170 - CH_H1) ly = 170 - CH_H1;
-    text(g, lx, ly, 1, C_HOME, HOME_LABEL);
+    int lx, ly;
+    if (placeLabel(x, y, textW(HOME_LABEL, 1), lx, ly)) {
+        text(g, lx, ly, 1, C_HOME, HOME_LABEL);
+    }
 }
 
 void drawHeader(Arduino_GFX* g, const Frame& f) {
@@ -259,8 +278,11 @@ void drawHeader(Arduino_GFX* g, const Frame& f) {
     char line[56];
     int used = snprintf(line, sizeof(line), "%d AC  %dkm", f.inRange, f.rangeKm);
     if (f.weather && f.weather[0]) {
-        snprintf(line + used, sizeof(line) - used, "  %s", f.weather);
+        used += snprintf(line + used, sizeof(line) - used, "  %s", f.weather);
     }
+    // Signal strength earns its place: a radar that keeps saying CONNECTING is
+    // usually standing somewhere the access point cannot reach.
+    if (f.rssiDbm != 0) snprintf(line + used, sizeof(line) - used, "  %ddBm", f.rssiDbm);
     text(g, 4, 17, 1, C_TEXT_DIM, line);
 
     const char* badge = statusBadge(f.status);
@@ -352,23 +374,21 @@ void drawPlanes(Arduino_GFX* g, const Frame& f) {
         }
         drawPlane(g, x, y, a.trackDeg, C_INK);
 
-        if (labelOnFace) {
-            int lx = x + 8, ly = y - 3;
-            int w = textW(a.callsign, 1);
-            if (lx + w > RADAR_CX + RADAR_R + 4) lx = x - 8 - w;  // flip to the left edge
-            if (lx < 1) lx = 1;
-            // Keep clear of the ring-distance strip that runs below the east axis.
-            if (ly + CH_H1 > RADAR_CY + 2 && ly < RADAR_CY + CH_H1 + 4) ly = RADAR_CY - CH_H1 - 4;
-            if (ly < HEADER_H + 1) ly = HEADER_H + 1;
-            if (ly > 170 - CH_H1) ly = 170 - CH_H1;
-            text(g, lx, ly, 1, C_INK, a.callsign);
+        // The overhead aircraft is already named in the header chip; labelling it
+        // again here only crowds the airport and home markers it is sitting on.
+        if (labelOnFace && !overhead) {
+            int lx, ly;
+            if (placeLabel(x, y - 5, textW(a.callsign, 1), lx, ly)) {
+                text(g, lx, ly, 1, C_INK, a.callsign);
+            }
         }
     }
 }
 
 void drawPanelEmpty(Arduino_GFX* g, const Frame& f) {
     const char* msg = "NO TRAFFIC";
-    if (f.status == Status::Connecting) msg = "CONNECTING";
+    if (f.status == Status::NoWifi) msg = "NO WIFI";
+    else if (f.status == Status::Connecting) msg = "CONNECTING";
     else if (f.status == Status::NoData) msg = "NO DATA";
     int x = PANEL_X + (PANEL_W - textW(msg, 1)) / 2;
     text(g, x, RADAR_CY - CH_H1 / 2, 1, C_TEXT_DIM, msg);
@@ -416,6 +436,9 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
 void draw(Arduino_GFX* g, const Frame& f) {
     g->fillScreen(C_GROUND);
     drawHeader(g, f);
+    // Black block behind the scope, then the green face punched back into it.
+    g->fillRect(0, HEADER_H, PANEL_X - 4, 170 - HEADER_H, C_BEZEL);
+    g->fillCircle(RADAR_CX, RADAR_CY, RADAR_DISC_R, C_GROUND);
     drawSweep(g, f);
     drawRadarGrid(g, f.rangeKm);
     drawTrails(g, f);

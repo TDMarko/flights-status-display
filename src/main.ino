@@ -10,6 +10,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <esp_system.h>
 #include <time.h>
 
 #include "adsb.h"
@@ -97,12 +98,17 @@ static int currentRangeKm() { return RANGES_KM[settings::rangeIndex()]; }
 static void connectWiFi() {
     if (WiFi.status() == WL_CONNECTED) return;
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);
+    WiFi.setSleep(false);            // latency over power; this thing is mains fed
+    WiFi.setAutoReconnect(true);
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);   // full transmit power, for range
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("WiFi: %s\n", WiFi.localIP().toString().c_str());
+        Serial.printf("WiFi: %s  rssi=%ddBm  ch=%d\n", WiFi.localIP().toString().c_str(),
+                      (int)WiFi.RSSI(), WiFi.channel());
         configTzTime(TZ_STRING, NTP_SERVER);
+    } else {
+        Serial.printf("WiFi: association failed (status %d)\n", (int)WiFi.status());
     }
 }
 
@@ -210,6 +216,11 @@ static void fetchTask(void *) {
 
     // Reported from here rather than setup(): USB CDC has not enumerated that
     // early, so anything printed in setup() is simply lost.
+    //
+    // reset: 0 unknown (typical after a serial-triggered reset), 1 power-on,
+    // 3 software, 4 panic, 12 brownout. Repeated brownouts on a weak signal
+    // mean the supply cannot hold up the radio's transmit peaks.
+    Serial.printf("boot: reset=%d heap=%u\n", (int)esp_reset_reason(), (unsigned)ESP.getFreeHeap());
     if (HOME_LAT != 0.0 || HOME_LON != 0.0) {
         Serial.printf("home: %.4f, %.4f (overhead within %.1fkm)\n", HOME_LAT, HOME_LON,
                       OVERHEAD_RADIUS_KM);
@@ -255,11 +266,15 @@ static void fetchTask(void *) {
 // ---------------------------------------------------------------------------
 
 static radar_ui::Status currentStatus() {
+    bool associated = WiFi.status() == WL_CONNECTED;
     uint32_t good = gLastGoodMs;
-    if (good == 0) return radar_ui::Status::Connecting;
+    // Never having fetched has two very different causes, and telling them
+    // apart on screen is the difference between "move the board" and "the
+    // data source is down".
+    if (good == 0) return associated ? radar_ui::Status::Connecting : radar_ui::Status::NoWifi;
     uint32_t age = millis() - good;
     if (age > DISCARD_AFTER_MS) return radar_ui::Status::NoData;
-    if (age > STALE_AFTER_MS || WiFi.status() != WL_CONNECTED) return radar_ui::Status::Stale;
+    if (!associated || age > STALE_AFTER_MS) return radar_ui::Status::Stale;
     return radar_ui::Status::Ok;
 }
 
@@ -329,6 +344,7 @@ static void renderFrame() {
         .airportDistKm = (float)geo::distanceKm(centre, airport),
         .airportBearingDeg = (float)geo::bearingDeg(centre, airport),
         .weather = gWeatherLine,
+        .rssiDbm = (WiFi.status() == WL_CONNECTED) ? (int)WiFi.RSSI() : 0,
         .homeValid = homeValid,
         .homeDistKm = homeValid ? (float)geo::distanceKm(centre, home) : 0.0f,
         .homeBearingDeg = homeValid ? (float)geo::bearingDeg(centre, home) : 0.0f,
@@ -345,7 +361,10 @@ static void renderFrame() {
     static uint32_t frames = 0, statsSince = 0;
     if (statsSince == 0) statsSince = now;
     if (++frames >= 200) {
-        Serial.printf("render: %.1f fps\n", frames * 1000.0 / (millis() - statsSince));
+        Serial.printf("render: %.1f fps  uptime=%lus  heap=%u  rssi=%ddBm\n",
+                      frames * 1000.0 / (millis() - statsSince), (unsigned long)(millis() / 1000),
+                      (unsigned)ESP.getFreeHeap(),
+                      WiFi.status() == WL_CONNECTED ? (int)WiFi.RSSI() : 0);
         frames = 0;
         statsSince = millis();
     }
