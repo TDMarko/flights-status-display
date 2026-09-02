@@ -90,7 +90,15 @@ Both are debounced at 40 ms. City index and range index persist to NVS
 (`Preferences`, namespace `flydar`) and are restored on boot.
 
 City presets live in `config.h`: Riga (56.9496, 24.1052) first and default,
-then Vilnius, Tallinn, Kaunas, Helsinki, Stockholm, Warsaw.
+then Vilnius, Tallinn, Kaunas, Helsinki, Stockholm, Warsaw. Each entry also
+carries its main airport (IATA code and position): RIX, VNO, TLL, KUN, HEL,
+ARN, WAW.
+
+The airport is drawn as a ringed runway symbol in the grid colour, beneath the
+aircraft layer so traffic stays dominant. Its IATA code is drawn beside it only
+when the symbol is at least 16 px from the radar centre; at wide ranges the
+airport collapses onto the centre marker and a label there would sit on the
+ring numbers.
 
 ## Layout — 320 x 170
 

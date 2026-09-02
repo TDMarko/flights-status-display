@@ -203,13 +203,19 @@ static void renderFrame() {
     char clock[12];
     clockString(clock, sizeof(clock));
 
+    const City &city = CITIES[settings::cityIndex()];
+    geo::LatLon airport{city.airportLat, city.airportLon};
+
     radar_ui::Frame frame{
-        .cityName = CITIES[settings::cityIndex()].name,
+        .cityName = city.name,
         .rangeKm = rangeKm,
         .snap = &gWorking,
         .inRange = adsb::countWithin(gWorking, rangeKm),
         .status = status,
         .clock = clock,
+        .airportCode = city.airport,
+        .airportDistKm = (float)geo::distanceKm(centre, airport),
+        .airportBearingDeg = (float)geo::bearingDeg(centre, airport),
     };
     radar_ui::draw(gfx, frame);
     gfx->flush();

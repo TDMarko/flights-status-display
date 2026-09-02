@@ -21,7 +21,13 @@ struct Frame {
     const adsb::Snapshot* snap;  // sorted nearest-first, relative fields filled
     int inRange;                 // how many of them are inside rangeKm
     Status status;
-    const char* clock;           // "12:04", or "" before NTP has synced
+    const char* clock;           // "12:04:37", or "" before NTP has synced
+
+    // The city's main airport, as an offset from the radar centre. Null code
+    // means "this city has none configured" and nothing is drawn.
+    const char* airportCode;
+    float airportDistKm;
+    float airportBearingDeg;
 };
 
 void draw(Arduino_GFX* gfx, const Frame& f);

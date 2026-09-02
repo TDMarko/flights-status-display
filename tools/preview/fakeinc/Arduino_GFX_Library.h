@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -39,6 +40,20 @@ class Arduino_GFX {
 
     void drawFastVLine(int x, int y, int h, uint16_t c) {
         for (int i = 0; i < h; i++) drawPixel(x, y + i, c);
+    }
+
+    // Bresenham, matching Arduino_GFX's output.
+    void drawLine(int x0, int y0, int x1, int y1, uint16_t c) {
+        int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        for (;;) {
+            drawPixel(x0, y0, c);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
     }
 
     // Midpoint circle, matching Arduino_GFX's output.

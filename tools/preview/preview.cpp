@@ -37,16 +37,32 @@ static void writePPM(const Arduino_GFX& g, const std::string& path) {
 }
 
 static void render(const std::string& out, const adsb::Snapshot& snapIn, int rangeKm,
-                   const char* city, radar_ui::Status status, const char* clock) {
+                   const char* cityName, radar_ui::Status status, const char* clock) {
     adsb::Snapshot snap = snapIn;
     adsb::computeRelative(snap, RIGA);
     adsb::sortByDistance(snap);
 
+    // Look the city up so the preview draws the same airport the firmware would.
+    const City* city = &CITIES[0];
+    for (int i = 0; i < CITY_COUNT; i++)
+        if (strcmp(CITIES[i].name, cityName) == 0) city = &CITIES[i];
+    geo::LatLon centre{city->lat, city->lon};
+    geo::LatLon airport{city->airportLat, city->airportLon};
+
     Arduino_GFX gfx(320, 170);
-    radar_ui::Frame f{city, rangeKm, &snap, adsb::countWithin(snap, rangeKm), status, clock};
+    radar_ui::Frame f{cityName,
+                      rangeKm,
+                      &snap,
+                      adsb::countWithin(snap, rangeKm),
+                      status,
+                      clock,
+                      city->airport,
+                      (float)geo::distanceKm(centre, airport),
+                      (float)geo::bearingDeg(centre, airport)};
     radar_ui::draw(&gfx, f);
     writePPM(gfx, out);
-    printf("%-28s range=%3dkm inRange=%d/%d\n", out.c_str(), rangeKm, f.inRange, snap.count);
+    printf("%-32s range=%3dkm inRange=%d/%d  %s at %.1fkm brg %.0f\n", out.c_str(), rangeKm,
+           f.inRange, snap.count, f.airportCode, f.airportDistKm, f.airportBearingDeg);
 }
 
 // A busier sky than Riga happened to have when the fixtures were captured.

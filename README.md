@@ -22,6 +22,9 @@ charger and it works. No computer, no cloud service, no companion app.
 - **Aircraft** as arrowheads pointing along their real track. When four or
   fewer are in range, each is labelled with its callsign on the face itself.
   The nearest one is ringed.
+- **Airport marker** for the selected city's main airport — a ringed runway
+  symbol in the grid colour, labelled with its IATA code when there is room
+  beside it. Aircraft reporting themselves on the ground sit on top of it.
 - **Side panel** listing the four nearest, sorted by distance: callsign,
   distance, altitude in metres, and `^` / `v` / `-` for climbing, descending,
   or level. The nearest is inverted so you read it first.
@@ -83,13 +86,17 @@ default:
 
 ```c
 static const City CITIES[] = {
-    {"RIGA",    56.9496, 24.1052},
-    {"VILNIUS", 54.6872, 25.2797},
-    // {"YOUR TOWN", latitude, longitude},
+    //  name       city centre            main airport
+    {"RIGA",    56.9496, 24.1052, "RIX", 56.9236, 23.9711},
+    {"VILNIUS", 54.6872, 25.2797, "VNO", 54.6341, 25.2858},
+    // {"YOUR TOWN", lat, lon, "XXX", airportLat, airportLon},
 };
 ```
 
-Names render at text size 2, so keep them to about twelve characters.
+Names render at text size 2, so keep them to about twelve characters. The
+`test_cities` suite checks every entry — each airport must be 2-60 km from its
+city centre, so a swapped lat/lon or a mistyped digit fails the build rather
+than drawing an airport in the wrong country.
 
 **Ranges.** `RANGES_KM` is the list the second button cycles.
 
@@ -143,8 +150,9 @@ request never stalls the animation.
 pio test -e native
 ```
 
-27 unit tests covering the geometry and the ADS-B parser, run on your machine
-against real captured adsb.lol responses in `test/fixtures/`.
+33 unit tests covering the geometry, the ADS-B parser, and the city/airport
+table, run on your machine against real captured adsb.lol responses in
+`test/fixtures/`.
 
 ## Previewing the UI without a board
 

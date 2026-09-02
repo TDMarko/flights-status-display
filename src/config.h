@@ -40,16 +40,20 @@ struct City {
     const char* name;
     double lat;
     double lon;
+    const char* airport;    // IATA code drawn beside the airport marker
+    double airportLat;
+    double airportLon;
 };
 
 static const City CITIES[] = {
-    {"RIGA",      56.9496, 24.1052},
-    {"VILNIUS",   54.6872, 25.2797},
-    {"TALLINN",   59.4370, 24.7536},
-    {"KAUNAS",    54.8985, 23.9036},
-    {"HELSINKI",  60.1699, 24.9384},
-    {"STOCKHOLM", 59.3293, 18.0686},
-    {"WARSAW",    52.2297, 21.0122},
+    //  name         city centre            main airport
+    {"RIGA",      56.9496, 24.1052, "RIX", 56.9236, 23.9711},
+    {"VILNIUS",   54.6872, 25.2797, "VNO", 54.6341, 25.2858},
+    {"TALLINN",   59.4370, 24.7536, "TLL", 59.4133, 24.8328},
+    {"KAUNAS",    54.8985, 23.9036, "KUN", 54.9639, 24.0848},
+    {"HELSINKI",  60.1699, 24.9384, "HEL", 60.3172, 24.9633},
+    {"STOCKHOLM", 59.3293, 18.0686, "ARN", 59.6519, 17.9186},
+    {"WARSAW",    52.2297, 21.0122, "WAW", 52.1657, 20.9671},
 };
 static const int CITY_COUNT = sizeof(CITIES) / sizeof(CITIES[0]);
 

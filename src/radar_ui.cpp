@@ -75,6 +75,37 @@ void drawPlane(Arduino_GFX* g, int x, int y, float trackDeg, uint16_t colour) {
     g->fillTriangle(tipX, tipY, aX, aY, bX, bY, colour);
 }
 
+// Aeronautical-chart style: a small ring with a runway bar through it. Drawn in
+// the grid colour and before the aircraft, so it reads as geography rather than
+// as traffic.
+void drawAirport(Arduino_GFX* g, const Frame& f) {
+    if (!f.airportCode || !f.airportCode[0]) return;
+    if (f.airportDistKm > (float)f.rangeKm) return;
+
+    double t = f.airportBearingDeg * M_PI / 180.0;
+    double scale = (double)RADAR_R / (double)f.rangeKm;
+    int x = RADAR_CX + (int)lround(f.airportDistKm * scale * sin(t));
+    int y = RADAR_CY - (int)lround(f.airportDistKm * scale * cos(t));
+
+    g->drawCircle(x, y, 4, C_GRID);
+    g->drawLine(x - 3, y + 3, x + 3, y - 3, C_GRID);  // the runway
+
+    // At wide ranges the airport collapses onto the "you are here" marker, and a
+    // label there lands on the centre dot or the ring numbers. Draw the symbol
+    // regardless, but only name it when there is genuinely room beside it.
+    double fromCentre = hypot((double)(x - RADAR_CX), (double)(y - RADAR_CY));
+    if (fromCentre < 16.0) return;
+
+    int lx = x + 7, ly = y + 2;
+    int w = textW(f.airportCode, 1);
+    if (lx + w > RADAR_CX + RADAR_R + 4) lx = x - 7 - w;
+    if (lx < 1) lx = 1;
+    if (ly + CH_H1 > RADAR_CY + 2 && ly < RADAR_CY + CH_H1 + 4) ly = RADAR_CY - CH_H1 - 4;
+    if (ly < HEADER_H + 1) ly = HEADER_H + 1;
+    if (ly > 170 - CH_H1) ly = 170 - CH_H1;
+    text(g, lx, ly, 1, C_GRID, f.airportCode);
+}
+
 void drawHeader(Arduino_GFX* g, const Frame& f) {
     text(g, 4, 1, 2, C_INK, f.cityName);
     int x = 4 + textW(f.cityName, 2) + 10;
@@ -209,6 +240,7 @@ void draw(Arduino_GFX* g, const Frame& f) {
     g->fillScreen(C_GROUND);
     drawHeader(g, f);
     drawRadarGrid(g, f.rangeKm);
+    drawAirport(g, f);
     drawPlanes(g, f);
     drawPanel(g, f);
 }
