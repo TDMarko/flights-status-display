@@ -121,16 +121,27 @@ static void connectWiFi() {
 
 // One HTTPS GET, body into `out`. Shared by the aircraft feed and the route
 // files, which live on different hosts under different roots.
+// True when the signal is too weak to rely on a TLS handshake completing
+// promptly. Association still works down here; it is the transactions that die.
+static bool linkIsWeak() {
+    return WiFi.status() != WL_CONNECTED || (int)WiFi.RSSI() < WEAK_RSSI_DBM;
+}
+
 static bool httpGetBody(const char *url, String &out) {
     if (WiFi.status() != WL_CONNECTED) return false;
 
+    uint32_t budget = linkIsWeak() ? HTTP_TIMEOUT_WEAK_MS : HTTP_TIMEOUT_MS;
+
     WiFiClientSecure client;
     client.setCACert(ADSB_ROOT_CAS);
-    client.setTimeout(HTTP_TIMEOUT_MS / 1000);
+    client.setTimeout(budget / 1000);
+    // The handshake is the fragile part: several round trips and a multi-KB
+    // certificate chain, all of which have to land.
+    client.setHandshakeTimeout(budget / 1000);
 
     HTTPClient http;
-    http.setConnectTimeout(HTTP_TIMEOUT_MS);
-    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setConnectTimeout(budget);
+    http.setTimeout(budget);
     http.setUserAgent("flydar/1.0 (+esp32)");
     if (!http.begin(client, url)) return false;
 
@@ -220,6 +231,7 @@ static void fetchWeather() {
 // Runs on the other core so a slow or failing request never stalls the radar.
 static void fetchTask(void *) {
     uint32_t lastAttempt = 0;
+    int consecutiveFailures = 0;
 
     // Reported from here rather than setup(): USB CDC has not enumerated that
     // early, so anything printed in setup() is simply lost.
@@ -236,7 +248,14 @@ static void fetchTask(void *) {
     }
 
     for (;;) {
-        bool due = gRefetchNow || (millis() - lastAttempt >= FETCH_INTERVAL_MS);
+        // Back off after repeated failures, and poll less often on a weak link:
+        // every failed handshake costs more than the data it would have brought.
+        uint32_t interval = linkIsWeak() ? FETCH_INTERVAL_WEAK_MS : FETCH_INTERVAL_MS;
+        if (consecutiveFailures > 0) {
+            uint32_t backoff = interval * (uint32_t)(1 << (consecutiveFailures > 3 ? 3 : consecutiveFailures));
+            interval = backoff > FETCH_BACKOFF_MAX_MS ? FETCH_BACKOFF_MAX_MS : backoff;
+        }
+        bool due = gRefetchNow || (millis() - lastAttempt >= interval);
         if (!due) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         gRefetchNow = false;
         lastAttempt = millis();
@@ -244,7 +263,10 @@ static void fetchTask(void *) {
         connectWiFi();
 
         adsb::Snapshot fresh;
-        if (fetchAircraft(fresh)) {
+        if (!fetchAircraft(fresh)) {
+            if (consecutiveFailures < 8) consecutiveFailures++;
+        } else {
+            consecutiveFailures = 0;
             adsb::computeRelative(fresh, currentCentre());
             adsb::sortByDistance(fresh);
             Serial.printf("fetch: %d aircraft, %d within %dkm\n", fresh.count,
@@ -256,9 +278,13 @@ static void fetchTask(void *) {
             xSemaphoreGive(gLock);
 
             // At most one route lookup per cycle: the panel fills in over the
-            // next few refreshes instead of firing a burst of requests.
-            const char *pending = routes::nextPending(fresh, PANEL_ROWS);
-            if (pending) fetchOneRoute(pending);
+            // next few refreshes instead of firing a burst of requests. On a
+            // weak link it is dropped entirely - it is the least important
+            // request and costs a whole extra handshake.
+            if (!linkIsWeak()) {
+                const char *pending = routes::nextPending(fresh, PANEL_ROWS);
+                if (pending) fetchOneRoute(pending);
+            }
         }
 
         if (WiFi.status() == WL_CONNECTED &&

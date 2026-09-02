@@ -124,6 +124,15 @@ static const uint32_t FRAME_INTERVAL_MS = 50;     // ~20 fps, so the sweep does 
 static const uint32_t STALE_AFTER_MS    = 30000;  // show the STALE badge
 static const uint32_t DISCARD_AFTER_MS  = 120000; // drop the aircraft list entirely
 static const uint32_t HTTP_TIMEOUT_MS   = 8000;
+
+// A marginal link does not fail to associate - it fails mid-transaction, part
+// way through a TLS handshake. Below this signal strength the firmware trades
+// freshness for reliability: longer timeouts, fewer connections, and it drops
+// the optional route lookups so the aircraft feed gets the whole budget.
+static const int WEAK_RSSI_DBM = -80;
+static const uint32_t HTTP_TIMEOUT_WEAK_MS   = 20000;
+static const uint32_t FETCH_INTERVAL_WEAK_MS = 20000;
+static const uint32_t FETCH_BACKOFF_MAX_MS   = 60000;
 static const uint32_t WIFI_RETRY_MS     = 5000;
 // Association takes a few seconds, and a first attempt can legitimately fail.
 // Only after this many consecutive failures is it worth alarming the user.
