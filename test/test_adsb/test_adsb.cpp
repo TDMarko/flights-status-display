@@ -179,6 +179,10 @@ static void test_dead_reckon_leaves_stationary_aircraft_alone() {
     TEST_ASSERT_FLOAT_WITHIN(1e-4, before, s.ac[0].distKm);
 }
 
+// A round, obviously synthetic point north-east of the city centre. Never use a
+// real address here: test fixtures end up in the public history.
+static const geo::LatLon TEST_HOME{57.0000, 24.2000};
+
 static void test_nearest_to_point_finds_what_is_overhead() {
     // Two aircraft: one right over the test home, one well away from it.
     const char* body =
@@ -187,7 +191,7 @@ static void test_nearest_to_point_finds_what_is_overhead() {
     adsb::Snapshot s;
     TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
 
-    geo::LatLon home{57.000000, 24.200000};
+    geo::LatLon home = TEST_HOME;
     float km = -1.0f;
     int i = adsb::nearestToPoint(s, home, km);
     TEST_ASSERT_EQUAL_INT(1, i);
@@ -204,14 +208,14 @@ static void test_nearest_to_point_is_measured_from_home_not_the_radar_centre() {
     TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
 
     float km = -1.0f;
-    adsb::nearestToPoint(s, {57.000000, 24.200000}, km);
-    TEST_ASSERT_FLOAT_WITHIN(0.5, 4.7, km);   // home sits ~4.7 km from the centre
+    adsb::nearestToPoint(s, TEST_HOME, km);
+    TEST_ASSERT_FLOAT_WITHIN(0.5, 8.0, km);   // the test home sits ~8 km from the centre
 }
 
 static void test_nearest_to_point_on_an_empty_sky() {
     adsb::Snapshot s;
     float km = -1.0f;
-    TEST_ASSERT_EQUAL_INT(-1, adsb::nearestToPoint(s, {56.97, 24.16}, km));
+    TEST_ASSERT_EQUAL_INT(-1, adsb::nearestToPoint(s, TEST_HOME, km));
     TEST_ASSERT_FLOAT_WITHIN(0.001, 0.0, km);
 }
 
