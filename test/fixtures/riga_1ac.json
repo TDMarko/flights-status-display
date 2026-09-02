@@ -1,0 +1,9 @@
+{"ac":[
+{"hex":"010285","type":"adsb_icao","flight":"PYR013  ","r":"SU-PAE","t":"A321","alt_baro":32000,"alt_geom":32275,"gs":435.4,"ias":281,"tas":452,"mach":0.776,"wd":323,"ws":27,"oat":-50,"tat":-23,"track":262.88,"track_rate":-0.03,"roll":-0.18,"mag_heading":256.99,"true_heading":266.07,"baro_rate":0,"geom_rate":0,"squawk":"1142","emergency":"none","category":"A3","nav_qnh":1013.6,"nav_altitude_mcp":32000,"nav_heading":0.00,"lat":56.779404,"lon":24.364414,"nic":8,"rc":186,"seen_pos":0.000,"version":2,"nic_baro":1,"nac_p":9,"nac_v":1,"sil":3,"sil_type":"perhour","gva":2,"sda":2,"alert":0,"spi":0,"mlat":[],"tisb":[],"messages":30206,"seen":0.0,"rssi":-11.7,"dst":13.332,"dir":139.9}
+]
+,"msg": "No error"
+,"now": 1788338328000
+,"total": 1
+,"ctime": 1788338328000
+,"ptime": 0
+}
