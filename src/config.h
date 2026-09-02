@@ -145,8 +145,8 @@ static const uint32_t BUTTON_DEBOUNCE_MS = 40;
 // no visible gap between them out at the rim.
 // ---------------------------------------------------------------------------
 static const uint32_t SWEEP_PERIOD_MS = 4000;
-static const int SWEEP_TAIL_STEPS = 90;
-static const float SWEEP_TAIL_DEG = 70.0f;
+static const int SWEEP_TAIL_STEPS = 63;
+static const float SWEEP_TAIL_DEG = 49.0f;
 
 static const uint32_t WEATHER_INTERVAL_MS = 600000;  // METARs are issued every 30 min
 static const uint32_t WEATHER_RETRY_MS    = 60000;   // ... but retry sooner after a failure
