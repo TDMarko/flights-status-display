@@ -136,23 +136,16 @@ void drawSweep(Arduino_GFX* g, const Frame& f) {
 // selected range cannot scribble across the header or the side panel.
 void plotInScope(Arduino_GFX* g, int x, int y, uint16_t colour) {
     int dx = x - RADAR_CX, dy = y - RADAR_CY;
-    if (dx * dx + dy * dy > RADAR_DISC_R * RADAR_DISC_R) return;
+    if (dx * dx + dy * dy > RADAR_PLOT_R * RADAR_PLOT_R) return;
     if (y < HEADER_H) return;
     g->drawPixel(x, y, colour);
 }
 
 constexpr double DASH_ON = 3.0, DASH_OFF = 3.0;
 
-// Half-width of the green face at a given screen row.
-double discHalfWidth(int y) {
-    double dy = (double)(y - RADAR_CY);
-    double v = (double)RADAR_DISC_R * RADAR_DISC_R - dy * dy;
-    return v > 0.0 ? sqrt(v) : 0.0;
-}
-
-// Places a size-1 label beside a point on the radar, keeping every pixel of it
-// on the green face. Black ink on the black bezel would simply disappear, so a
-// label that cannot fit is not drawn at all.
+// Places a size-1 label beside a point on the radar, kept inside the radar
+// block so it can never bleed into the side panel. Returns false if it will not
+// fit at all.
 bool placeLabel(int x, int y, int w, int& lx, int& ly) {
     ly = y + 2;
     // Keep clear of the ring-distance strip below the east axis.
@@ -160,8 +153,7 @@ bool placeLabel(int x, int y, int w, int& lx, int& ly) {
     if (ly < HEADER_H + 1) ly = HEADER_H + 1;
     if (ly > 170 - CH_H1) ly = 170 - CH_H1;
 
-    double hw = fmin(discHalfWidth(ly), discHalfWidth(ly + CH_H1 - 1));
-    int left = RADAR_CX - (int)hw, right = RADAR_CX + (int)hw;
+    const int left = 1, right = PANEL_X - 6;
 
     lx = x + 7;
     if (lx + w > right) lx = x - 7 - w;   // flip to the inboard side
@@ -436,9 +428,6 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
 void draw(Arduino_GFX* g, const Frame& f) {
     g->fillScreen(C_GROUND);
     drawHeader(g, f);
-    // Black block behind the scope, then the green face punched back into it.
-    g->fillRect(0, HEADER_H, PANEL_X - 4, 170 - HEADER_H, C_BEZEL);
-    g->fillCircle(RADAR_CX, RADAR_CY, RADAR_DISC_R, C_GROUND);
     drawSweep(g, f);
     drawRadarGrid(g, f.rangeKm);
     drawTrails(g, f);

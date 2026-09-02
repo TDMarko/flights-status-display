@@ -39,10 +39,6 @@
 // aircraft go, blue is where you are standing.
 #define C_HOME C_RGB(24, 72, 240)
 
-// The scope sits on a black bezel, so the radar face reads as an instrument
-// rather than as a circle drawn on the page. In the classic scheme the ground
-// is already black and the bezel simply disappears.
-#define C_BEZEL C_RGB(0, 0, 0)
 
 // Secondary panel text: darker than the rings so it stays legible at text
 // size 1, lighter than the ink so it still reads as subordinate.
@@ -171,8 +167,9 @@ static const int HEADER_H     = 26;   // two rows: city + clock, then the status
 static const int RADAR_CX     = 88;
 static const int RADAR_CY     = 98;
 static const int RADAR_R      = 66;   // outer ring
-static const int RADAR_DISC_R = 69;   // green face; the 3px halo gives arrow
-                                      // tips and labels somewhere to sit
+static const int RADAR_PLOT_R = 69;   // nothing on the face is drawn beyond this;
+                                      // the 3px past the outer ring gives arrow
+                                      // tips and trails somewhere to land
 static const int RADAR_MARGIN = 3;    // clearance from the header and the foot
 static const int PANEL_X      = 180;
 static const int PANEL_W      = 136;
