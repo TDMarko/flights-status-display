@@ -11,6 +11,7 @@
 #include "config.h"
 #include "radar_ui.h"
 #include "routes.h"
+#include "weather.h"
 #include "trails.h"
 
 static const geo::LatLon RIGA{56.9496, 24.1052};
@@ -39,7 +40,9 @@ static void writePPM(const Arduino_GFX& g, const std::string& path) {
 }
 
 static void render(const std::string& out, const adsb::Snapshot& snapIn, int rangeKm,
-                   const char* cityName, radar_ui::Status status, const char* clock) {
+                   const char* cityName, radar_ui::Status status, const char* clock,
+                   const char* metar = "", const char* overheadCs = nullptr,
+                   const char* overheadHex = nullptr) {
     // Look the city up so the preview draws the same airport the firmware would.
     const City* city = &CITIES[0];
     for (int i = 0; i < CITY_COUNT; i++)
@@ -72,7 +75,13 @@ static void render(const std::string& out, const adsb::Snapshot& snapIn, int ran
                       clock,
                       city->airport,
                       (float)geo::distanceKm(centre, airport),
-                      (float)geo::bearingDeg(centre, airport)};
+                      (float)geo::bearingDeg(centre, airport),
+                      metar,
+                      true,
+                      (float)geo::distanceKm(centre, {HOME_LAT, HOME_LON}),
+                      (float)geo::bearingDeg(centre, {HOME_LAT, HOME_LON}),
+                      overheadHex,
+                      overheadCs};
     radar_ui::draw(&gfx, f);
     writePPM(gfx, out);
     printf("%-32s range=%3dkm inRange=%d/%d  %s at %.1fkm brg %.0f\n", out.c_str(), rangeKm,
@@ -84,7 +93,7 @@ static adsb::Snapshot syntheticBusy(geo::LatLon centre) {
     std::string body = "{\"ac\":[";
     struct Row { const char* cs; const char* type; double brg, km, alt, track, rate; };
     const Row rows[] = {
-        {"BTI1PA", "A220", 15,  8.0, 4100,  200, 1800},
+        {"BTI1PA", "A220", 52,  4.7, 1250, 200, 1800},   // sits right over HOME
         {"RYR9JC", "B738", 95, 18.0, 11000, 260, -1600},
         {"SAS742",  "A20N", 160, 27.0, 22000, 340, 0},
         {"AFL2311", "B77W", 220, 41.0, 34000, 45,  0},
@@ -146,12 +155,12 @@ int main(int argc, char** argv) {
     adsb::Snapshot busyStockholm = syntheticBusy(stockholm);
     adsb::Snapshot empty;
 
-    render(outDir + "/01_real_200km.ppm", real, 200, "RIGA", radar_ui::Status::Ok, "12:04:37");
-    render(outDir + "/02_real_50km.ppm", real, 50, "RIGA", radar_ui::Status::Ok, "12:04:37");
-    render(outDir + "/03_busy_100km.ppm", busy, 100, "RIGA", radar_ui::Status::Ok, "12:04:37");
-    render(outDir + "/04_busy_20km.ppm", busy, 20, "RIGA", radar_ui::Status::Ok, "12:04:37");
+    render(outDir + "/01_real_200km.ppm", real, 200, "RIGA", radar_ui::Status::Ok, "12:04:37", "RIX SSW 4kt 19C BKN");
+    render(outDir + "/02_real_50km.ppm", real, 50, "RIGA", radar_ui::Status::Ok, "12:04:37", "RIX CALM 19C BKN");
+    render(outDir + "/03_busy_100km.ppm", busy, 100, "RIGA", radar_ui::Status::Ok, "12:04:37", "RIX WNW 18kt -3C OVC");
+    render(outDir + "/04_busy_20km.ppm", busy, 20, "RIGA", radar_ui::Status::Ok, "12:04:37", "RIX VRB 3kt 7C FEW", "BTI1PA", "4001d6");
     render(outDir + "/05_connecting.ppm", empty, 50, "RIGA", radar_ui::Status::Connecting, "");
-    render(outDir + "/06_stale.ppm", busyStockholm, 100, "STOCKHOLM", radar_ui::Status::Stale, "23:59:58");
-    render(outDir + "/07_header_worstcase.ppm", busyStockholm, 200, "STOCKHOLM", radar_ui::Status::NoData, "23:59:58");
+    render(outDir + "/06_stale.ppm", busyStockholm, 100, "STOCKHOLM", radar_ui::Status::Stale, "23:59:58", "ARN NNE 22kt -11C OVC");
+    render(outDir + "/07_header_worstcase.ppm", busyStockholm, 200, "STOCKHOLM", radar_ui::Status::NoData, "23:59:58", "ARN NNE 22kt -11C OVC");
     return 0;
 }

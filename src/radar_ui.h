@@ -28,6 +28,21 @@ struct Frame {
     const char* airportCode;
     float airportDistKm;
     float airportBearingDeg;
+
+    // Preformatted METAR summary, e.g. "RIX SSW 4kt 19C BKN". Empty until the
+    // first report arrives.
+    const char* weather;
+
+    // Home, as an offset from the radar centre. homeValid is false when no home
+    // is configured.
+    bool homeValid;
+    float homeDistKm;
+    float homeBearingDeg;
+
+    // The aircraft currently overhead, or nullptr. `overheadHex` identifies it
+    // on the radar face; `overheadCallsign` is what gets shown.
+    const char* overheadHex;
+    const char* overheadCallsign;
 };
 
 void draw(Arduino_GFX* gfx, const Frame& f);

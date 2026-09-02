@@ -34,6 +34,15 @@ static void test_coordinates_are_in_the_right_hemisphere() {
     }
 }
 
+static void test_every_city_has_an_icao_code_for_its_metar() {
+    for (int i = 0; i < CITY_COUNT; i++) {
+        const City& c = CITIES[i];
+        TEST_ASSERT_TRUE(c.icao && strlen(c.icao) == 4);
+        for (int k = 0; k < 4; k++) TEST_ASSERT_TRUE(c.icao[k] >= 'A' && c.icao[k] <= 'Z');
+    }
+    TEST_ASSERT_EQUAL_STRING("EVRA", CITIES[0].icao);   // Riga International
+}
+
 static void test_every_city_has_a_name_and_airport_code() {
     for (int i = 0; i < CITY_COUNT; i++) {
         TEST_ASSERT_TRUE(CITIES[i].name && strlen(CITIES[i].name) > 0);
@@ -63,6 +72,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_every_airport_is_plausibly_near_its_city);
     RUN_TEST(test_coordinates_are_in_the_right_hemisphere);
+    RUN_TEST(test_every_city_has_an_icao_code_for_its_metar);
     RUN_TEST(test_every_city_has_a_name_and_airport_code);
     RUN_TEST(test_riga_is_first_so_it_is_the_default);
     RUN_TEST(test_rix_sits_west_south_west_of_riga_centre);

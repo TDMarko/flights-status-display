@@ -179,6 +179,42 @@ static void test_dead_reckon_leaves_stationary_aircraft_alone() {
     TEST_ASSERT_FLOAT_WITHIN(1e-4, before, s.ac[0].distKm);
 }
 
+static void test_nearest_to_point_finds_what_is_overhead() {
+    // Two aircraft: one right over the test home, one well away from it.
+    const char* body =
+        "{\"ac\":[{\"hex\":\"aaa111\",\"flight\":\"FARAWAY\",\"lat\":57.30,\"lon\":24.60},"
+        "{\"hex\":\"bbb222\",\"flight\":\"ABOVEME\",\"lat\":57.0001,\"lon\":24.2001}]}";
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+
+    geo::LatLon home{57.000000, 24.200000};
+    float km = -1.0f;
+    int i = adsb::nearestToPoint(s, home, km);
+    TEST_ASSERT_EQUAL_INT(1, i);
+    TEST_ASSERT_EQUAL_STRING("ABOVEME", s.ac[i].callsign);
+    TEST_ASSERT_TRUE(km < 0.1f);
+}
+
+static void test_nearest_to_point_is_measured_from_home_not_the_radar_centre() {
+    // This aircraft is nearer Riga city centre than it is to home, so a
+    // centre-based search would pick the wrong frame of reference.
+    const char* body =
+        "{\"ac\":[{\"hex\":\"ccc333\",\"flight\":\"OVERCITY\",\"lat\":56.9496,\"lon\":24.1052}]}";
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+
+    float km = -1.0f;
+    adsb::nearestToPoint(s, {57.000000, 24.200000}, km);
+    TEST_ASSERT_FLOAT_WITHIN(0.5, 4.7, km);   // home sits ~4.7 km from the centre
+}
+
+static void test_nearest_to_point_on_an_empty_sky() {
+    adsb::Snapshot s;
+    float km = -1.0f;
+    TEST_ASSERT_EQUAL_INT(-1, adsb::nearestToPoint(s, {56.97, 24.16}, km));
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 0.0, km);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_parses_five_aircraft_from_a_real_response);
@@ -195,5 +231,8 @@ int main(int, char**) {
     RUN_TEST(test_empty_ac_array_parses_to_zero_aircraft);
     RUN_TEST(test_dead_reckon_moves_aircraft_along_its_track);
     RUN_TEST(test_dead_reckon_leaves_stationary_aircraft_alone);
+    RUN_TEST(test_nearest_to_point_finds_what_is_overhead);
+    RUN_TEST(test_nearest_to_point_is_measured_from_home_not_the_radar_centre);
+    RUN_TEST(test_nearest_to_point_on_an_empty_sky);
     return UNITY_END();
 }

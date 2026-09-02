@@ -22,6 +22,7 @@
 #include "routes.h"
 #include "secrets.h"
 #include "settings.h"
+#include "weather.h"
 #include "trails.h"
 
 // ---- Display: built from display_config.h ----
@@ -62,6 +63,12 @@ static adsb::Snapshot gPublished;      // most recent successful fetch
 static volatile bool gHasNew = false;  // gPublished not yet picked up
 static volatile uint32_t gLastGoodMs = 0;
 static volatile bool gRefetchNow = false;
+
+// Airport weather, refreshed far more slowly than the traffic.
+static char gWeatherLine[48] = "";
+static uint32_t gLastWeatherMs = 0;
+static uint32_t gWeatherEveryMs = WEATHER_INTERVAL_MS;
+static volatile bool gWeatherStale = true;
 
 // Owned by the render loop: the snapshot actually on screen, dead-reckoned
 // forward between fetches.
@@ -129,7 +136,11 @@ static bool fetchAircraft(adsb::Snapshot &out) {
              c.lat, c.lon, nmi);
 
     String body;
-    if (!httpGetBody(url, body)) { Serial.println("fetch: failed"); return false; }
+    if (!httpGetBody(url, body)) {
+        // Before the radio associates this is expected, not worth reporting.
+        if (WiFi.status() == WL_CONNECTED) Serial.println("fetch: failed");
+        return false;
+    }
     if (!adsb::parse(body.c_str(), body.length(), out)) {
         Serial.println("fetch: bad JSON");
         return false;
@@ -155,6 +166,34 @@ static void fetchOneRoute(const char *callsign) {
         // Remember the miss too, or every refresh would ask again.
         routes::store(callsign, "");
     }
+}
+
+// The airport's METAR. Issued about every half hour, so polled every ten
+// minutes and re-read immediately when the city changes.
+static void fetchWeather() {
+    const City &city = CITIES[settings::cityIndex()];
+    char url[160];
+    snprintf(url, sizeof(url),
+             "https://aviationweather.gov/api/data/metar?ids=%s&format=json", city.icao);
+
+    String body;
+    weather::Report report;
+    bool ok = httpGetBody(url, body) && weather::parse(body.c_str(), body.length(), report);
+    if (ok) {
+        char line[48];
+        weather::format(report, city.airport, line, sizeof(line));
+        xSemaphoreTake(gLock, portMAX_DELAY);
+        snprintf(gWeatherLine, sizeof(gWeatherLine), "%s", line);
+        xSemaphoreGive(gLock);
+        Serial.printf("metar: %s\n", line);
+    } else {
+        Serial.printf("metar: %s unavailable\n", city.icao);
+    }
+    gLastWeatherMs = millis();
+    gWeatherStale = false;
+    // A failure must not lock the next attempt out for the full interval: the
+    // first try happens before WiFi has associated and always fails.
+    gWeatherEveryMs = ok ? WEATHER_INTERVAL_MS : WEATHER_RETRY_MS;
 }
 
 // Runs on the other core so a slow or failing request never stalls the radar.
@@ -184,6 +223,11 @@ static void fetchTask(void *) {
             // next few refreshes instead of firing a burst of requests.
             const char *pending = routes::nextPending(fresh, PANEL_ROWS);
             if (pending) fetchOneRoute(pending);
+        }
+
+        if (WiFi.status() == WL_CONNECTED &&
+            (gWeatherStale || (millis() - gLastWeatherMs) >= gWeatherEveryMs)) {
+            fetchWeather();
         }
     }
 }
@@ -241,6 +285,21 @@ static void renderFrame() {
     const City &city = CITIES[settings::cityIndex()];
     geo::LatLon airport{city.airportLat, city.airportLon};
 
+    // Is anything directly above you right now? Measured from home, which is
+    // not the radar centre.
+    const char *overheadHex = nullptr;
+    const char *overheadCallsign = nullptr;
+    bool homeValid = (HOME_LAT != 0.0 || HOME_LON != 0.0);
+    geo::LatLon home{HOME_LAT, HOME_LON};
+    if (homeValid && gWorking.count > 0) {
+        float km = 0.0f;
+        int i = adsb::nearestToPoint(gWorking, home, km);
+        if (i >= 0 && km <= (float)OVERHEAD_RADIUS_KM) {
+            overheadHex = gWorking.ac[i].hex;
+            overheadCallsign = gWorking.ac[i].callsign;
+        }
+    }
+
     radar_ui::Frame frame{
         .cityName = city.name,
         .rangeKm = rangeKm,
@@ -251,6 +310,12 @@ static void renderFrame() {
         .airportCode = city.airport,
         .airportDistKm = (float)geo::distanceKm(centre, airport),
         .airportBearingDeg = (float)geo::bearingDeg(centre, airport),
+        .weather = gWeatherLine,
+        .homeValid = homeValid,
+        .homeDistKm = homeValid ? (float)geo::distanceKm(centre, home) : 0.0f,
+        .homeBearingDeg = homeValid ? (float)geo::bearingDeg(centre, home) : 0.0f,
+        .overheadHex = overheadHex,
+        .overheadCallsign = overheadCallsign,
     };
     radar_ui::draw(gfx, frame);
     gfx->flush();
@@ -284,6 +349,9 @@ void loop() {
         gWorking.count = 0;      // the old city's traffic is meaningless here
         trails::clear();         // and trails are offsets from the old centre
         routes::clear();         // free the cache for the new city's traffic
+        gWeatherLine[0] = '\0';  // and the old airport's weather
+        gWeatherStale = true;
+        gWeatherEveryMs = WEATHER_INTERVAL_MS;
         gLastGoodMs = 0;
         gRefetchNow = true;
     }

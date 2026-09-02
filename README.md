@@ -28,6 +28,13 @@ charger and it works. No computer, no cloud service, no companion app.
   reporting themselves on the ground sit on top of it.
 - **History trails**: a dashed line behind each aircraft showing roughly the
   last two and a half minutes of its flight, clipped to the outer ring.
+- **Home**, in blue: a diamond at your own coordinates, which are not the city
+  centre the radar is drawn around.
+- **Overhead alert**: when an aircraft passes within 3 km of home, its callsign
+  appears in a blue chip on the top row and it gets a double blue ring on the
+  radar. This is the "is something above me right now" answer.
+- **Airport weather** in the header: wind, temperature and cloud cover from the
+  airport's METAR, e.g. `RIX SSW 4kt 19C BKN`.
 - **Side panel** listing the four nearest, sorted by distance. Three lines
   each: callsign, then the route and operator in tiny text
   (`RIX>ARN airBaltic`), then distance, altitude in metres and `^` / `v` / `-`
@@ -110,6 +117,13 @@ than drawing an airport in the wrong country.
 top. Uncomment `CLASSIC_SCHEME` for the traditional black ground with green
 data. Nothing else changes.
 
+**Home.** `HOME_LAT` / `HOME_LON` in `config.h` are your own coordinates,
+drawn as a blue diamond and used for the overhead alert.
+`OVERHEAD_RADIUS_KM` is how close counts as overhead — 3 km by default, which
+puts a jet at cruise within about 15 degrees of vertical. Set `HOME_LAT` to 0
+to switch the feature off. Home only makes sense for the city you live in;
+cycle to another and it is simply out of range and not drawn.
+
 **Clock.** `TZ_STRING` is a POSIX timezone string, set to Latvia by default.
 
 **Trail length.** `TRAIL_SAMPLE_MS` in `config.h` and `TRAIL_POINTS` in
@@ -117,7 +131,7 @@ data. Nothing else changes.
 about 2.5 minutes, roughly 30 km behind an airliner. Each point costs 8 bytes
 per aircraft.
 
-## Where the route and operator come from
+## Where the route, operator and weather come from
 
 The aircraft feed carries neither, so both are derived from the callsign.
 
@@ -136,9 +150,15 @@ most one lookup per ten-second cycle so the panel fills in over a few refreshes
 instead of firing a burst. Multi-leg services show all three legs
 (`CAN>CKG>AMS`). Aircraft with no published route keep the operator line.
 
-Note this host uses a different certificate authority from the aircraft feed,
-so `src/cert_roots.h` pins both ISRG Root X1 (Let's Encrypt) and GTS Root R4
-(Google Trust Services) as one concatenated PEM bundle.
+**Weather** comes from aviationweather.gov (NOAA), which serves each airport's
+decoded METAR as JSON, free and without a key. Reports are issued about every
+half hour, so it is polled every ten minutes, and immediately when the city
+changes.
+
+These three hosts use three different certificate authorities, so
+`src/cert_roots.h` pins ISRG Root X1 (Let's Encrypt), GTS Root R4 (Google Trust
+Services) and DigiCert Global Root G2 as one concatenated PEM bundle; mbedTLS
+parses a chain of PEM blocks from a single buffer.
 
 ## Data source
 
@@ -170,6 +190,7 @@ Pure logic is kept free of Arduino headers so it can be tested on your machine.
 | `src/trails.cpp` | Position history per aircraft, keyed by ICAO hex. |
 | `src/airlines.cpp` | ICAO operator designator to airline name. |
 | `src/routes.cpp` | Origin/destination lookup and its cache. |
+| `src/weather.cpp` | METAR decoding and the header summary line. |
 | `src/radar_ui.cpp` | All drawing. |
 | `src/settings.cpp` | Saves city and range to flash. |
 | `src/buttons.cpp` | Debounce. |
@@ -186,8 +207,9 @@ request never stalls the animation.
 pio test -e native
 ```
 
-67 unit tests covering the geometry, the ADS-B parser, the history trails, the
-airline table, the route cache, and the city/airport table, run on your machine against real captured adsb.lol responses in
+80 unit tests covering the geometry, the ADS-B parser, the history trails, the
+airline table, the route cache, METAR decoding, the overhead search, and the
+city/airport table, run on your machine against real captured adsb.lol responses in
 `test/fixtures/`.
 
 ## Previewing the UI without a board

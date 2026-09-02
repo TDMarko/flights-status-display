@@ -51,4 +51,9 @@ void deadReckon(Snapshot& s, geo::LatLon centre, double dtSec);
 // How many are within rangeKm. Assumes computeRelative has run.
 int countWithin(const Snapshot& s, double rangeKm);
 
+// Index of the aircraft closest to an arbitrary point (not the radar centre),
+// or -1 when the snapshot is empty. Writes the distance in km to distKmOut.
+// Used to decide what, if anything, is overhead.
+int nearestToPoint(const Snapshot& s, geo::LatLon p, float& distKmOut);
+
 }  // namespace adsb

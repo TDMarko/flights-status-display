@@ -193,6 +193,35 @@ That host uses Google Trust Services while the aircraft feed uses Let's
 Encrypt, so `cert_roots.h` pins both roots as one concatenated PEM bundle;
 mbedTLS parses a chain of PEM blocks from a single buffer.
 
+## Home and the overhead alert
+
+`HOME_LAT` / `HOME_LON` in `config.h` are the operator's own coordinates, which
+are not the city centre the radar is drawn around. Home is a blue diamond —
+blue being the third and last colour outside the two-colour scheme, with red
+marking a place aircraft go and blue marking where you are standing.
+
+An aircraft within `OVERHEAD_RADIUS_KM` (3 km) of home, measured across the
+ground, counts as overhead. `adsb::nearestToPoint` performs that search against
+an arbitrary point rather than the radar centre, because the two differ. When
+something is overhead its callsign appears in a blue chip on the header's large
+row and it gets a double blue ring on the radar face. The HOME label is
+suppressed while that is true, because an aircraft directly over home would
+otherwise print its callsign on top of the label.
+
+## Airport weather
+
+aviationweather.gov (NOAA) serves each airport's decoded METAR as JSON, keyed
+by ICAO code, which every city entry now carries. Polled every ten minutes,
+since reports are issued about every half hour, and immediately on a city
+change. A failed attempt retries after a minute rather than waiting the full
+interval — the first attempt happens before the radio has associated and always
+fails, so treating that as a fresh reading would blank the header for ten
+minutes.
+
+`weather::format` produces the header line, e.g. `RIX SSW 4kt 19C BKN`, and
+omits whatever the report did not carry. A direction with no speed is not
+shown; a variable direction reads `VRB`; zero wind reads `CALM`.
+
 ## Failure behaviour
 
 | Condition                | Behaviour                                                          |

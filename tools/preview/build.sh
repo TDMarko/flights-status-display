@@ -7,6 +7,6 @@ AJ=".pio/libdeps/flydar/ArduinoJson/src"
 mkdir -p "$OUT"
 c++ -std=gnu++17 -O1 -Wall \
     -Itools/preview/fakeinc -Itools/preview -Isrc -I"$AJ" \
-    tools/preview/preview.cpp src/radar_ui.cpp src/geo.cpp src/adsb.cpp src/trails.cpp src/airlines.cpp src/routes.cpp \
+    tools/preview/preview.cpp src/radar_ui.cpp src/geo.cpp src/adsb.cpp src/trails.cpp src/airlines.cpp src/routes.cpp src/weather.cpp \
     -o "$OUT/preview"
 "$OUT/preview" "$OUT" test/fixtures

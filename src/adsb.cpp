@@ -127,6 +127,17 @@ void deadReckon(Snapshot& s, geo::LatLon centre, double dtSec) {
     computeRelative(s, centre);
 }
 
+int nearestToPoint(const Snapshot& s, geo::LatLon p, float& distKmOut) {
+    int best = -1;
+    double bestKm = 0.0;
+    for (int i = 0; i < s.count; i++) {
+        double d = geo::distanceKm(p, {s.ac[i].lat, s.ac[i].lon});
+        if (best < 0 || d < bestKm) { best = i; bestKm = d; }
+    }
+    distKmOut = (best < 0) ? 0.0f : (float)bestKm;
+    return best;
+}
+
 int countWithin(const Snapshot& s, double rangeKm) {
     int n = 0;
     for (int i = 0; i < s.count; i++) {

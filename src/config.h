@@ -35,6 +35,10 @@
 // fixed place at a glance, never as traffic. Red works on both grounds.
 #define C_AIRPORT C_RGB(232, 32, 32)
 
+// Home, in blue: the third and last colour outside the scheme. Red is a place
+// aircraft go, blue is where you are standing.
+#define C_HOME C_RGB(24, 72, 240)
+
 // Secondary panel text: darker than the rings so it stays legible at text
 // size 1, lighter than the ink so it still reads as subordinate.
 #ifdef CLASSIC_SCHEME
@@ -61,21 +65,40 @@ struct City {
     double lat;
     double lon;
     const char* airport;    // IATA code drawn beside the airport marker
+    const char* icao;       // ICAO code, used to pull the airport's METAR
     double airportLat;
     double airportLon;
 };
 
 static const City CITIES[] = {
     //  name         city centre            main airport
-    {"RIGA",      56.9496, 24.1052, "RIX", 56.9236, 23.9711},
-    {"VILNIUS",   54.6872, 25.2797, "VNO", 54.6341, 25.2858},
-    {"TALLINN",   59.4370, 24.7536, "TLL", 59.4133, 24.8328},
-    {"KAUNAS",    54.8985, 23.9036, "KUN", 54.9639, 24.0848},
-    {"HELSINKI",  60.1699, 24.9384, "HEL", 60.3172, 24.9633},
-    {"STOCKHOLM", 59.3293, 18.0686, "ARN", 59.6519, 17.9186},
-    {"WARSAW",    52.2297, 21.0122, "WAW", 52.1657, 20.9671},
+    {"RIGA",      56.9496, 24.1052, "RIX", "EVRA", 56.9236, 23.9711},
+    {"VILNIUS",   54.6872, 25.2797, "VNO", "EYVI", 54.6341, 25.2858},
+    {"TALLINN",   59.4370, 24.7536, "TLL", "EETN", 59.4133, 24.8328},
+    {"KAUNAS",    54.8985, 23.9036, "KUN", "EYKA", 54.9639, 24.0848},
+    {"HELSINKI",  60.1699, 24.9384, "HEL", "EFHK", 60.3172, 24.9633},
+    {"STOCKHOLM", 59.3293, 18.0686, "ARN", "ESSA", 59.6519, 17.9186},
+    {"WARSAW",    52.2297, 21.0122, "WAW", "EPWA", 52.1657, 20.9671},
 };
 static const int CITY_COUNT = sizeof(CITIES) / sizeof(CITIES[0]);
+
+// ---------------------------------------------------------------------------
+// Home
+//
+// Where you actually are, as opposed to the city centre the radar is drawn
+// around. Marked in blue, and used to decide whether an aircraft is overhead.
+// Set HOME_LAT to 0 to turn the whole feature off.
+//
+// Only meaningful for the city you live in; cycle to another city and home is
+// simply out of range and not drawn.
+// ---------------------------------------------------------------------------
+static const double HOME_LAT = 0.000000;
+static const double HOME_LON = 0.000000;
+#define HOME_LABEL "HOME"
+
+// An aircraft closer than this to home, measured across the ground, counts as
+// overhead. At 3 km a jet at cruise is within about 15 degrees of vertical.
+static const double OVERHEAD_RADIUS_KM = 3.0;
 
 // ---------------------------------------------------------------------------
 // Ranges — button 2 (GPIO14) cycles these. The outer ring is this many km.
@@ -104,6 +127,9 @@ static const uint32_t BUTTON_DEBOUNCE_MS = 40;
 // stub at 200 km. Raise TRAIL_POINTS (in trails.h) for longer history; it
 // costs 8 bytes per point per aircraft.
 // ---------------------------------------------------------------------------
+static const uint32_t WEATHER_INTERVAL_MS = 600000;  // METARs are issued every 30 min
+static const uint32_t WEATHER_RETRY_MS    = 60000;   // ... but retry sooner after a failure
+
 static const uint32_t TRAIL_SAMPLE_MS  = 5000;
 static const uint32_t TRAIL_MAX_AGE_MS = 120000;  // forget an aircraft not seen this long
 
@@ -116,10 +142,10 @@ static const int PIN_BTN_RANGE = 14;
 // ---------------------------------------------------------------------------
 // Layout for the 320x170 landscape panel
 // ---------------------------------------------------------------------------
-static const int HEADER_H     = 18;
+static const int HEADER_H     = 26;   // two rows: city + clock, then the status line
 static const int RADAR_CX     = 88;
-static const int RADAR_CY     = 95;
-static const int RADAR_R      = 72;
+static const int RADAR_CY     = 98;
+static const int RADAR_R      = 71;
 static const int PANEL_X      = 180;
 static const int PANEL_W      = 136;
 static const int PANEL_ROWS   = 4;    // aircraft listed in the side panel

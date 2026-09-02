@@ -34,9 +34,14 @@ void textRight(Arduino_GFX* g, int right, int y, int size, uint16_t colour, cons
 
 // Black block with green lettering — used for the nearest aircraft and for the
 // status badge, so they read as "picked out" rather than merely different.
+void chipC(Arduino_GFX* g, int x, int y, int w, int h, int size, const char* s,
+           uint16_t bg, uint16_t fg) {
+    g->fillRect(x, y, w, h, bg);
+    text(g, x + 3, y + (h - (size == 2 ? CH_H2 : CH_H1)) / 2, size, fg, s);
+}
+
 void chip(Arduino_GFX* g, int x, int y, int w, int h, int size, const char* s) {
-    g->fillRect(x, y, w, h, C_CHIP_BG);
-    text(g, x + 3, y + (h - (size == 2 ? CH_H2 : CH_H1)) / 2, size, C_CHIP_FG, s);
+    chipC(g, x, y, w, h, size, s, C_CHIP_BG, C_CHIP_FG);
 }
 
 const char* statusBadge(Status s) {
@@ -165,25 +170,69 @@ void drawAirport(Arduino_GFX* g, const Frame& f) {
     text(g, lx, ly, 1, C_AIRPORT, f.airportCode);
 }
 
+// Home is a blue diamond. Red marks a place aircraft go; blue marks where you
+// are standing, and the two must never be confusable at a glance.
+void drawHome(Arduino_GFX* g, const Frame& f) {
+    if (!f.homeValid || f.homeDistKm > (float)f.rangeKm) return;
+
+    double t = f.homeBearingDeg * M_PI / 180.0;
+    double scale = (double)RADAR_R / (double)f.rangeKm;
+    int x = RADAR_CX + (int)lround(f.homeDistKm * scale * sin(t));
+    int y = RADAR_CY - (int)lround(f.homeDistKm * scale * cos(t));
+
+    g->drawLine(x - 5, y, x, y - 5, C_HOME);
+    g->drawLine(x, y - 5, x + 5, y, C_HOME);
+    g->drawLine(x + 5, y, x, y + 5, C_HOME);
+    g->drawLine(x, y + 5, x - 5, y, C_HOME);
+    g->fillCircle(x, y, 1, C_HOME);
+
+    // With an aircraft overhead, the label lands on that aircraft's own callsign
+    // and the two become unreadable. The blue rings and the header chip already
+    // say where it is.
+    if (f.overheadCallsign && f.overheadCallsign[0]) return;
+
+    double fromCentre = hypot((double)(x - RADAR_CX), (double)(y - RADAR_CY));
+    if (fromCentre < 18.0) return;   // the label would sit on the centre marker
+
+    int lx = x + 8, ly = y + 2;
+    int w = textW(HOME_LABEL, 1);
+    if (lx + w > RADAR_CX + RADAR_R + 4) lx = x - 8 - w;
+    if (lx < 1) lx = 1;
+    if (ly + CH_H1 > RADAR_CY + 2 && ly < RADAR_CY + CH_H1 + 4) ly = RADAR_CY - CH_H1 - 4;
+    if (ly < HEADER_H + 1) ly = HEADER_H + 1;
+    if (ly > 170 - CH_H1) ly = 170 - CH_H1;
+    text(g, lx, ly, 1, C_HOME, HOME_LABEL);
+}
+
 void drawHeader(Arduino_GFX* g, const Frame& f) {
-    text(g, 4, 1, 2, C_INK, f.cityName);
-    int x = 4 + textW(f.cityName, 2) + 10;
+    // Row one: the city, large, and the clock. Row two: everything small —
+    // aircraft count, range, and the airport's weather.
+    text(g, 4, 0, 2, C_INK, f.cityName);
+    if (f.clock && f.clock[0]) textRight(g, 316, 1, 2, C_INK, f.clock);
 
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%d AC", f.inRange);
-    text(g, x, 1, 1, C_INK, buf);
-    snprintf(buf, sizeof(buf), "%dkm", f.rangeKm);
-    text(g, x, 10, 1, C_GRID, buf);
-
-    int right = 316;
-    if (f.clock && f.clock[0]) {
-        textRight(g, right, 2, 2, C_INK, f.clock);
-        right -= textW(f.clock, 2) + 8;
+    // Something directly above you is the most interesting thing the radar can
+    // say, so it gets the large row and the third colour.
+    if (f.overheadCallsign && f.overheadCallsign[0]) {
+        char over[20];
+        snprintf(over, sizeof(over), "^ %s", f.overheadCallsign);
+        int w = textW(over, 2) + 6;
+        int x = 4 + textW(f.cityName, 2) + 10;
+        int limit = 316 - (f.clock && f.clock[0] ? textW(f.clock, 2) + 8 : 0);
+        if (x + w > limit) x = limit - w;
+        if (x > 4 + textW(f.cityName, 2) + 4) chipC(g, x, 0, w, CH_H2, 2, over, C_HOME, C_GROUND);
     }
+
+    char line[56];
+    int used = snprintf(line, sizeof(line), "%d AC  %dkm", f.inRange, f.rangeKm);
+    if (f.weather && f.weather[0]) {
+        snprintf(line + used, sizeof(line) - used, "  %s", f.weather);
+    }
+    text(g, 4, 17, 1, C_TEXT_DIM, line);
+
     const char* badge = statusBadge(f.status);
     if (badge) {
         int w = textW(badge, 1) + 6;
-        chip(g, right - w, 4, w, 11, 1, badge);
+        chip(g, 316 - w, 16, w, 10, 1, badge);
     }
 
     g->drawFastHLine(0, HEADER_H - 1, 320, C_GRID);
@@ -260,7 +309,13 @@ void drawPlanes(Arduino_GFX* g, const Frame& f) {
         int x = RADAR_CX + (int)lround(a.distKm * scale * sin(t));
         int y = RADAR_CY - (int)lround(a.distKm * scale * cos(t));
 
-        if (i == 0) g->drawCircle(x, y, 9, C_INK);  // the one the panel highlights
+        bool overhead = f.overheadHex && f.overheadHex[0] && strcmp(a.hex, f.overheadHex) == 0;
+        if (overhead) {
+            g->drawCircle(x, y, 9, C_HOME);
+            g->drawCircle(x, y, 12, C_HOME);
+        } else if (i == 0) {
+            g->drawCircle(x, y, 9, C_INK);  // the one the panel highlights
+        }
         drawPlane(g, x, y, a.trackDeg, C_INK);
 
         if (labelOnFace) {
@@ -293,7 +348,7 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
     // Three lines per entry: callsign, then route/operator, then the numbers.
     // The header already reports how many are in range, so the panel spends its
     // last rows on aircraft rather than on a "+N more" footer.
-    const int rowH = 36;
+    const int rowH = 35;
     int y = HEADER_H + 4;
     int shown = 0;
 
@@ -330,6 +385,7 @@ void draw(Arduino_GFX* g, const Frame& f) {
     drawRadarGrid(g, f.rangeKm);
     drawTrails(g, f);
     drawAirport(g, f);
+    drawHome(g, f);
     drawPlanes(g, f);
     drawPanel(g, f);
 }
