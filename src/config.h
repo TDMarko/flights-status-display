@@ -96,13 +96,12 @@ static const int CITY_COUNT = sizeof(CITIES) / sizeof(CITIES[0]);
 //
 // Where you actually are, as opposed to the city centre the radar is drawn
 // around. Marked in blue, and used to decide whether an aircraft is overhead.
-// Set HOME_LAT to 0 to turn the whole feature off.
 //
-// Only meaningful for the city you live in; cycle to another city and home is
+// HOME_LAT and HOME_LON live in secrets.h, not here: your address is personal
+// data and secrets.h is git-ignored. Leave them out and the feature is off.
+// Home only makes sense for the city you live in; cycle to another and it is
 // simply out of range and not drawn.
 // ---------------------------------------------------------------------------
-static const double HOME_LAT = 0.000000;
-static const double HOME_LON = 0.000000;
 #define HOME_LABEL "HOME"
 
 // An aircraft closer than this to home, measured across the ground, counts as

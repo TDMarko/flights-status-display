@@ -22,6 +22,14 @@
 #include "routes.h"
 #include "secrets.h"
 #include "settings.h"
+
+// Optional, and set in secrets.h so it is never committed. Without it the home
+// marker and the overhead alert are simply off.
+#ifndef HOME_LAT
+  #define HOME_LAT 0.0
+  #define HOME_LON 0.0
+#endif
+
 #include "weather.h"
 #include "trails.h"
 
@@ -199,6 +207,16 @@ static void fetchWeather() {
 // Runs on the other core so a slow or failing request never stalls the radar.
 static void fetchTask(void *) {
     uint32_t lastAttempt = 0;
+
+    // Reported from here rather than setup(): USB CDC has not enumerated that
+    // early, so anything printed in setup() is simply lost.
+    if (HOME_LAT != 0.0 || HOME_LON != 0.0) {
+        Serial.printf("home: %.4f, %.4f (overhead within %.1fkm)\n", HOME_LAT, HOME_LON,
+                      OVERHEAD_RADIUS_KM);
+    } else {
+        Serial.println("home: not set (add HOME_LAT/HOME_LON to secrets.h)");
+    }
+
     for (;;) {
         bool due = gRefetchNow || (millis() - lastAttempt >= FETCH_INTERVAL_MS);
         if (!due) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
@@ -346,6 +364,7 @@ void setup() {
 
     settings::begin();
     buttons::begin();
+
 
     gfx->begin();
     gLock = xSemaphoreCreateMutex();
