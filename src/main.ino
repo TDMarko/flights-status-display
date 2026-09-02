@@ -79,6 +79,10 @@ static uint32_t gLastWeatherMs = 0;
 static uint32_t gWeatherEveryMs = WEATHER_INTERVAL_MS;
 static volatile bool gWeatherStale = true;
 
+// Consecutive failed association attempts. Zero while associating for the first
+// time, which is why "not connected" alone must never mean "no WiFi".
+static volatile int gWifiFailures = 0;
+
 // Owned by the render loop: the snapshot actually on screen, dead-reckoned
 // forward between fetches.
 static adsb::Snapshot gWorking;
@@ -104,11 +108,14 @@ static void connectWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(250);
     if (WiFi.status() == WL_CONNECTED) {
+        gWifiFailures = 0;
         Serial.printf("WiFi: %s  rssi=%ddBm  ch=%d\n", WiFi.localIP().toString().c_str(),
                       (int)WiFi.RSSI(), WiFi.channel());
         configTzTime(TZ_STRING, NTP_SERVER);
     } else {
-        Serial.printf("WiFi: association failed (status %d)\n", (int)WiFi.status());
+        gWifiFailures++;
+        Serial.printf("WiFi: association failed (status %d, attempt %d)\n",
+                      (int)WiFi.status(), gWifiFailures);
     }
 }
 
@@ -268,10 +275,15 @@ static void fetchTask(void *) {
 static radar_ui::Status currentStatus() {
     bool associated = WiFi.status() == WL_CONNECTED;
     uint32_t good = gLastGoodMs;
-    // Never having fetched has two very different causes, and telling them
-    // apart on screen is the difference between "move the board" and "the
-    // data source is down".
-    if (good == 0) return associated ? radar_ui::Status::Connecting : radar_ui::Status::NoWifi;
+    if (good == 0) {
+        // Nothing fetched yet. Associating takes several seconds, so "not
+        // connected right now" is the normal state at boot and must not be
+        // reported as a fault; only repeated failures earn the alarm.
+        if (!associated && gWifiFailures >= WIFI_FAILURES_BEFORE_ALARM) {
+            return radar_ui::Status::NoWifi;
+        }
+        return radar_ui::Status::Connecting;
+    }
     uint32_t age = millis() - good;
     if (age > DISCARD_AFTER_MS) return radar_ui::Status::NoData;
     if (!associated || age > STALE_AFTER_MS) return radar_ui::Status::Stale;

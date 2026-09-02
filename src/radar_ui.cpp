@@ -47,7 +47,7 @@ void chip(Arduino_GFX* g, int x, int y, int w, int h, int size, const char* s) {
 const char* statusBadge(Status s) {
     switch (s) {
         case Status::NoWifi:     return "NO WIFI";
-        case Status::Connecting: return "SYNC";
+        case Status::Connecting: return "CONNECTING";
         case Status::Stale:      return "STALE";
         case Status::NoData:     return "NO DATA";
         default:                 return nullptr;
@@ -270,17 +270,24 @@ void drawHeader(Arduino_GFX* g, const Frame& f) {
     char line[56];
     int used = snprintf(line, sizeof(line), "%d AC  %dkm", f.inRange, f.rangeKm);
     if (f.weather && f.weather[0]) {
-        used += snprintf(line + used, sizeof(line) - used, "  %s", f.weather);
+        snprintf(line + used, sizeof(line) - used, "  %s", f.weather);
     }
-    // Signal strength earns its place: a radar that keeps saying CONNECTING is
-    // usually standing somewhere the access point cannot reach.
-    if (f.rssiDbm != 0) snprintf(line + used, sizeof(line) - used, "  %ddBm", f.rssiDbm);
     text(g, 4, 17, 1, C_TEXT_DIM, line);
+
+    // Signal strength lives hard right, where it stays put instead of shifting
+    // about as the weather line changes length.
+    int right = 316;
+    if (f.rssiDbm != 0) {
+        char rssi[12];
+        snprintf(rssi, sizeof(rssi), "%ddBm", f.rssiDbm);
+        textRight(g, right, 17, 1, C_TEXT_DIM, rssi);
+        right -= textW(rssi, 1) + 8;
+    }
 
     const char* badge = statusBadge(f.status);
     if (badge) {
         int w = textW(badge, 1) + 6;
-        chip(g, 316 - w, 16, w, 10, 1, badge);
+        chip(g, right - w, 16, w, 10, 1, badge);
     }
 
     g->drawFastHLine(0, HEADER_H - 1, 320, C_GRID);

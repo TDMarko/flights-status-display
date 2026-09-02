@@ -125,6 +125,9 @@ static const uint32_t STALE_AFTER_MS    = 30000;  // show the STALE badge
 static const uint32_t DISCARD_AFTER_MS  = 120000; // drop the aircraft list entirely
 static const uint32_t HTTP_TIMEOUT_MS   = 8000;
 static const uint32_t WIFI_RETRY_MS     = 5000;
+// Association takes a few seconds, and a first attempt can legitimately fail.
+// Only after this many consecutive failures is it worth alarming the user.
+static const int WIFI_FAILURES_BEFORE_ALARM = 2;
 static const uint32_t BUTTON_DEBOUNCE_MS = 40;
 
 // ---------------------------------------------------------------------------
