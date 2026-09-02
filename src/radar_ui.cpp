@@ -97,6 +97,40 @@ void formatDistance(float km, char* out, size_t n) {
     else             snprintf(out, n, "%dkm", (int)lround(km));
 }
 
+// Linear blend of two RGB565 colours; t=0 gives a, t=1 gives b. Each channel
+// has to be unpacked because the bit widths differ (5/6/5).
+uint16_t blend565(uint16_t a, uint16_t b, float t) {
+    int ar = (a >> 11) & 0x1F, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
+    int br = (b >> 11) & 0x1F, bg = (b >> 5) & 0x3F, bb = b & 0x1F;
+    int r = (int)lround(ar + (br - ar) * t);
+    int gg = (int)lround(ag + (bg - ag) * t);
+    int bl = (int)lround(ab + (bb - ab) * t);
+    return (uint16_t)((r << 11) | (gg << 5) | bl);
+}
+
+// The rotating arm, drawn as a fan of lines fading back into the ground. It is
+// painted before the grid so it passes underneath the rings and the data
+// instead of scrubbing over them.
+void drawSweep(Arduino_GFX* g, const Frame& f) {
+    if (f.sweepDeg < 0.0f) return;
+
+    const double step = SWEEP_TAIL_DEG / SWEEP_TAIL_STEPS;
+    for (int k = SWEEP_TAIL_STEPS - 1; k >= 0; k--) {
+        float t = (float)k / (float)SWEEP_TAIL_STEPS;   // 0 at the leading edge
+        double a0 = f.sweepDeg - (k + 1.4) * step;      // slivers overlap slightly,
+        double a1 = f.sweepDeg - k * step;              // or thin ones drop scanlines
+        double r0 = a0 * M_PI / 180.0, r1 = a1 * M_PI / 180.0;
+        // Filled slivers rather than a fan of lines: lines separate near the rim
+        // and leave the tail visibly striped.
+        g->fillTriangle(RADAR_CX, RADAR_CY,
+                        RADAR_CX + (int)lround(RADAR_R * sin(r0)),
+                        RADAR_CY - (int)lround(RADAR_R * cos(r0)),
+                        RADAR_CX + (int)lround(RADAR_R * sin(r1)),
+                        RADAR_CY - (int)lround(RADAR_R * cos(r1)),
+                        blend565(C_SWEEP, C_GROUND, t));
+    }
+}
+
 // Only ever paints inside the outer ring, so a trail running in from beyond the
 // selected range cannot scribble across the header or the side panel.
 void plotInScope(Arduino_GFX* g, int x, int y, uint16_t colour) {
@@ -382,6 +416,7 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
 void draw(Arduino_GFX* g, const Frame& f) {
     g->fillScreen(C_GROUND);
     drawHeader(g, f);
+    drawSweep(g, f);
     drawRadarGrid(g, f.rangeKm);
     drawTrails(g, f);
     drawAirport(g, f);

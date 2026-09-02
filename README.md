@@ -33,6 +33,8 @@ charger and it works. No computer, no cloud service, no companion app.
 - **Overhead alert**: when an aircraft passes within 3 km of home, its callsign
   appears in a blue chip on the top row and it gets a double blue ring on the
   radar. This is the "is something above me right now" answer.
+- **Sweep**: a pale wedge rotating once every four seconds, drawn beneath the
+  rings and the data so it never obscures anything. Purely decorative.
 - **Airport weather** in the header: wind, temperature and cloud cover from the
   airport's METAR, e.g. `RIX SSW 4kt 19C BKN`.
 - **Side panel** listing the four nearest, sorted by distance. Three lines
@@ -123,6 +125,11 @@ drawn as a blue diamond and used for the overhead alert.
 puts a jet at cruise within about 15 degrees of vertical. Set `HOME_LAT` to 0
 to switch the feature off. Home only makes sense for the city you live in;
 cycle to another and it is simply out of range and not drawn.
+
+**Sweep.** `SWEEP_PERIOD_MS` is one revolution; set it to 0 to turn the sweep
+off. `SWEEP_TAIL_DEG` and `SWEEP_TAIL_STEPS` shape the fading wedge, and
+`C_SWEEP` is its colour. `FRAME_INTERVAL_MS` sets the render rate; the board
+measures about 19 fps at the default 50 ms and prints it to the serial port.
 
 **Clock.** `TZ_STRING` is a POSIX timezone string, set to Latvia by default.
 

@@ -42,7 +42,7 @@ static void writePPM(const Arduino_GFX& g, const std::string& path) {
 static void render(const std::string& out, const adsb::Snapshot& snapIn, int rangeKm,
                    const char* cityName, radar_ui::Status status, const char* clock,
                    const char* metar = "", const char* overheadCs = nullptr,
-                   const char* overheadHex = nullptr) {
+                   const char* overheadHex = nullptr, float sweepDeg = 55.0f) {
     // Look the city up so the preview draws the same airport the firmware would.
     const City* city = &CITIES[0];
     for (int i = 0; i < CITY_COUNT; i++)
@@ -81,7 +81,8 @@ static void render(const std::string& out, const adsb::Snapshot& snapIn, int ran
                       (float)geo::distanceKm(centre, {HOME_LAT, HOME_LON}),
                       (float)geo::bearingDeg(centre, {HOME_LAT, HOME_LON}),
                       overheadHex,
-                      overheadCs};
+                      overheadCs,
+                      sweepDeg};
     radar_ui::draw(&gfx, f);
     writePPM(gfx, out);
     printf("%-32s range=%3dkm inRange=%d/%d  %s at %.1fkm brg %.0f\n", out.c_str(), rangeKm,

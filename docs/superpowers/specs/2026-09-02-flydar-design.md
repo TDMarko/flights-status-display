@@ -222,6 +222,24 @@ minutes.
 omits whatever the report did not carry. A direction with no speed is not
 shown; a variable direction reads `VRB`; zero wind reads `CALM`.
 
+## Sweep
+
+Decorative only. A wedge rotates once every `SWEEP_PERIOD_MS`, its angle driven
+from `millis()` rather than a frame counter so it turns at a steady rate
+whatever the render loop achieves.
+
+It is drawn immediately after the background clear and before the rings, so it
+passes underneath the grid and the data rather than scrubbing over them. The
+wedge is built from filled slivers rather than a fan of lines: lines separate
+near the rim and leave the tail visibly striped. Adjacent slivers overlap by a
+fraction of a step, or a thin one drops scanlines and leaves a gap. Each sliver
+is blended from `C_SWEEP` towards the background, which needs a per-channel
+RGB565 lerp because the bit widths differ.
+
+The sweep is why the frame interval dropped to 50 ms. The board sustains about
+19 fps, which it reports on the serial port, giving roughly 76 frames per
+revolution.
+
 ## Failure behaviour
 
 | Condition                | Behaviour                                                          |

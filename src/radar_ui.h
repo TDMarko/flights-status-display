@@ -43,6 +43,10 @@ struct Frame {
     // on the radar face; `overheadCallsign` is what gets shown.
     const char* overheadHex;
     const char* overheadCallsign;
+
+    // Bearing of the leading edge of the decorative sweep, in degrees. Negative
+    // disables it.
+    float sweepDeg;
 };
 
 void draw(Arduino_GFX* gfx, const Frame& f);

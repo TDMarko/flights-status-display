@@ -316,9 +316,21 @@ static void renderFrame() {
         .homeBearingDeg = homeValid ? (float)geo::bearingDeg(centre, home) : 0.0f,
         .overheadHex = overheadHex,
         .overheadCallsign = overheadCallsign,
+        // Driven from the clock, not the frame counter, so the sweep turns at a
+        // steady rate whatever the render loop manages.
+        .sweepDeg = SWEEP_PERIOD_MS ? (float)((now % SWEEP_PERIOD_MS) * 360.0 / SWEEP_PERIOD_MS)
+                                    : -1.0f,
     };
     radar_ui::draw(gfx, frame);
     gfx->flush();
+
+    static uint32_t frames = 0, statsSince = 0;
+    if (statsSince == 0) statsSince = now;
+    if (++frames >= 200) {
+        Serial.printf("render: %.1f fps\n", frames * 1000.0 / (millis() - statsSince));
+        frames = 0;
+        statsSince = millis();
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -47,6 +47,15 @@
   #define C_TEXT_DIM C_RGB(24, 96, 38)
 #endif
 
+// The sweep is a light wedge rather than a dark one: on a green ground it reads
+// as a beam passing over the scope, and being lighter than the ground it can
+// never be mistaken for data.
+#ifdef CLASSIC_SCHEME
+  #define C_SWEEP C_RGB(120, 255, 140)
+#else
+  #define C_SWEEP C_RGB(178, 255, 192)
+#endif
+
 // Aircraft history trails sit between the grid and the ink: clearly subordinate
 // to the aircraft they belong to, clearly above the rings.
 #ifdef CLASSIC_SCHEME
@@ -111,7 +120,7 @@ static const int DEFAULT_RANGE_INDEX = 1;  // 50 km
 // Timing
 // ---------------------------------------------------------------------------
 static const uint32_t FETCH_INTERVAL_MS = 10000;  // adsb.lol asks for polite polling
-static const uint32_t FRAME_INTERVAL_MS = 100;    // ~10 fps dead-reckoned motion
+static const uint32_t FRAME_INTERVAL_MS = 50;     // ~20 fps, so the sweep does not step
 static const uint32_t STALE_AFTER_MS    = 30000;  // show the STALE badge
 static const uint32_t DISCARD_AFTER_MS  = 120000; // drop the aircraft list entirely
 static const uint32_t HTTP_TIMEOUT_MS   = 8000;
@@ -127,6 +136,18 @@ static const uint32_t BUTTON_DEBOUNCE_MS = 40;
 // stub at 200 km. Raise TRAIL_POINTS (in trails.h) for longer history; it
 // costs 8 bytes per point per aircraft.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Sweep
+//
+// Purely decorative. SWEEP_PERIOD_MS is one full revolution; set it to 0 to
+// turn the sweep off. The wedge is drawn as SWEEP_TAIL_STEPS lines fanned back
+// over SWEEP_TAIL_DEG, fading into the background - enough lines that there is
+// no visible gap between them out at the rim.
+// ---------------------------------------------------------------------------
+static const uint32_t SWEEP_PERIOD_MS = 4000;
+static const int SWEEP_TAIL_STEPS = 90;
+static const float SWEEP_TAIL_DEG = 70.0f;
+
 static const uint32_t WEATHER_INTERVAL_MS = 600000;  // METARs are issued every 30 min
 static const uint32_t WEATHER_RETRY_MS    = 60000;   // ... but retry sooner after a failure
 
