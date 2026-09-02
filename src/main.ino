@@ -144,6 +144,9 @@ static void fetchTask(void *) {
 
         adsb::Snapshot fresh;
         if (fetchAircraft(fresh)) {
+            adsb::computeRelative(fresh, currentCentre());
+            Serial.printf("fetch: %d aircraft, %d within %dkm\n", fresh.count,
+                          adsb::countWithin(fresh, currentRangeKm()), currentRangeKm());
             xSemaphoreTake(gLock, portMAX_DELAY);
             gPublished = fresh;
             gHasNew = true;
