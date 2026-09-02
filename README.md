@@ -22,9 +22,12 @@ charger and it works. No computer, no cloud service, no companion app.
 - **Aircraft** as arrowheads pointing along their real track. When four or
   fewer are in range, each is labelled with its callsign on the face itself.
   The nearest one is ringed.
-- **Airport marker** for the selected city's main airport — a ringed runway
-  symbol in the grid colour, labelled with its IATA code when there is room
-  beside it. Aircraft reporting themselves on the ground sit on top of it.
+- **Airport beacon** for the selected city's main airport, in red — the one
+  colour on screen that is neither ground nor ink, so it never reads as
+  traffic. Labelled with its IATA code when there is room beside it. Aircraft
+  reporting themselves on the ground sit on top of it.
+- **History trails**: a dashed line behind each aircraft showing roughly the
+  last two and a half minutes of its flight, clipped to the outer ring.
 - **Side panel** listing the four nearest, sorted by distance: callsign,
   distance, altitude in metres, and `^` / `v` / `-` for climbing, descending,
   or level. The nearest is inverted so you read it first.
@@ -106,6 +109,11 @@ data. Nothing else changes.
 
 **Clock.** `TZ_STRING` is a POSIX timezone string, set to Latvia by default.
 
+**Trail length.** `TRAIL_SAMPLE_MS` in `config.h` and `TRAIL_POINTS` in
+`trails.h` multiply out to how far back a trail reaches — 32 points at 5 s is
+about 2.5 minutes, roughly 30 km behind an airliner. Each point costs 8 bytes
+per aircraft.
+
 ## Data source
 
 [adsb.lol](https://adsb.lol) — a free, community-fed ADS-B aggregator. No API
@@ -134,6 +142,7 @@ Pure logic is kept free of Arduino headers so it can be tested on your machine.
 |---|---|
 | `src/geo.cpp` | Projection, distance, bearing, dead reckoning, unit conversion. |
 | `src/adsb.cpp` | JSON to aircraft, filtering, distance sort, staleness. |
+| `src/trails.cpp` | Position history per aircraft, keyed by ICAO hex. |
 | `src/radar_ui.cpp` | All drawing. |
 | `src/settings.cpp` | Saves city and range to flash. |
 | `src/buttons.cpp` | Debounce. |
@@ -150,8 +159,8 @@ request never stalls the animation.
 pio test -e native
 ```
 
-33 unit tests covering the geometry, the ADS-B parser, and the city/airport
-table, run on your machine against real captured adsb.lol responses in
+45 unit tests covering the geometry, the ADS-B parser, the history trails, and
+the city/airport table, run on your machine against real captured adsb.lol responses in
 `test/fixtures/`.
 
 ## Previewing the UI without a board

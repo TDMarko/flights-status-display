@@ -94,8 +94,10 @@ then Vilnius, Tallinn, Kaunas, Helsinki, Stockholm, Warsaw. Each entry also
 carries its main airport (IATA code and position): RIX, VNO, TLL, KUN, HEL,
 ARN, WAW.
 
-The airport is drawn as a ringed runway symbol in the grid colour, beneath the
-aircraft layer so traffic stays dominant. Its IATA code is drawn beside it only
+The airport is drawn as a red beacon — ring, runway bar and filled centre —
+beneath the aircraft layer so traffic stays dominant. Red is deliberately
+outside the two-colour scheme: it is the only mark on screen that is neither
+ground nor ink, so the eye never mistakes a fixed place for traffic. Its IATA code is drawn beside it only
 when the symbol is at least 16 px from the radar centre; at wide ranges the
 airport collapses onto the centre marker and a label there would sit on the
 ring numbers.
@@ -136,6 +138,7 @@ host.
 |----------------------|-------------------------------------------------------------------|
 | `src/geo.h/.cpp`     | Projection, distance, bearing, dead reckoning, unit conversion.    |
 | `src/adsb.h/.cpp`    | JSON body to `Aircraft[]`, filtering, distance sort, staleness.    |
+| `src/trails.h/.cpp`  | Per-aircraft position history, keyed by ICAO hex.                  |
 | `src/radar_ui.h/.cpp`| All drawing against an `Arduino_GFX*`.                            |
 | `src/settings.h/.cpp`| NVS load/save of city and range index.                            |
 | `src/buttons.h/.cpp` | Debounce and edge detection for the two buttons.                  |
@@ -147,6 +150,25 @@ host.
 `pio test -e native` runs their unit tests on the development machine, using
 real captured adsb.lol responses as fixtures (`test/fixtures/`). Display and
 network code is thin and verified on hardware.
+
+## History trails
+
+Each aircraft leaves a dashed trail of where it has been. History cannot live
+in the aircraft snapshot, because a snapshot is replaced wholesale on every
+fetch; `trails` keeps a separate fixed table keyed by ICAO hex address.
+
+Points are stored as kilometres east/north of the radar centre, which stays
+valid as the range changes, and are cleared when the city changes. The table
+holds 32 aircraft of 32 points sampled every 5 s — about two and a half
+minutes, or roughly 30 km behind an airliner. A full table evicts the least
+recently seen aircraft. An aircraft unseen for two minutes is forgotten.
+
+Drawing walks the polyline pixel by pixel with a dash phase carried across
+segments, so dashes stay evenly spaced rather than restarting at each vertex,
+and paints only inside the outer ring — a trail running in from beyond the
+selected range must not scribble across the header or the side panel. A final
+segment joins the newest sample to the aircraft's current position so the trail
+ends at the arrowhead.
 
 ## Failure behaviour
 

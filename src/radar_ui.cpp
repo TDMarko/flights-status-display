@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "geo.h"
+#include "trails.h"
 
 namespace radar_ui {
 
@@ -63,6 +64,35 @@ void formatDistance(float km, char* out, size_t n) {
     else             snprintf(out, n, "%dkm", (int)lround(km));
 }
 
+// Only ever paints inside the outer ring, so a trail running in from beyond the
+// selected range cannot scribble across the header or the side panel.
+void plotInScope(Arduino_GFX* g, int x, int y, uint16_t colour) {
+    int dx = x - RADAR_CX, dy = y - RADAR_CY;
+    if (dx * dx + dy * dy > RADAR_R * RADAR_R) return;
+    if (y < HEADER_H) return;
+    g->drawPixel(x, y, colour);
+}
+
+constexpr double DASH_ON = 3.0, DASH_OFF = 3.0;
+
+// Walks one segment pixel by pixel, painting the "on" part of the dash pattern.
+// `phase` carries across segments so the dashes stay evenly spaced along the
+// whole trail rather than restarting at every vertex.
+double dashSegment(Arduino_GFX* g, double x0, double y0, double x1, double y1,
+                   uint16_t colour, double phase) {
+    double dx = x1 - x0, dy = y1 - y0;
+    double len = hypot(dx, dy);
+    if (len < 0.01) return phase;
+    int steps = (int)ceil(len);
+    for (int i = 0; i <= steps; i++) {
+        double t = (double)i / steps;
+        if (fmod(phase + t * len, DASH_ON + DASH_OFF) < DASH_ON) {
+            plotInScope(g, (int)lround(x0 + dx * t), (int)lround(y0 + dy * t), colour);
+        }
+    }
+    return phase + len;
+}
+
 // A little arrowhead pointing along the aircraft's track. Screen y grows
 // downward, so north (track 0) is (0, -1).
 void drawPlane(Arduino_GFX* g, int x, int y, float trackDeg, uint16_t colour) {
@@ -75,9 +105,9 @@ void drawPlane(Arduino_GFX* g, int x, int y, float trackDeg, uint16_t colour) {
     g->fillTriangle(tipX, tipY, aX, aY, bX, bY, colour);
 }
 
-// Aeronautical-chart style: a small ring with a runway bar through it. Drawn in
-// the grid colour and before the aircraft, so it reads as geography rather than
-// as traffic.
+// A red beacon: filled centre, outer ring, and a runway bar. Red is the one
+// colour on screen that is neither ground nor ink, so the eye finds the airport
+// instantly and never confuses it with traffic.
 void drawAirport(Arduino_GFX* g, const Frame& f) {
     if (!f.airportCode || !f.airportCode[0]) return;
     if (f.airportDistKm > (float)f.rangeKm) return;
@@ -87,14 +117,15 @@ void drawAirport(Arduino_GFX* g, const Frame& f) {
     int x = RADAR_CX + (int)lround(f.airportDistKm * scale * sin(t));
     int y = RADAR_CY - (int)lround(f.airportDistKm * scale * cos(t));
 
-    g->drawCircle(x, y, 4, C_GRID);
-    g->drawLine(x - 3, y + 3, x + 3, y - 3, C_GRID);  // the runway
+    g->drawCircle(x, y, 5, C_AIRPORT);
+    g->drawLine(x - 4, y + 4, x + 4, y - 4, C_AIRPORT);  // the runway
+    g->fillCircle(x, y, 2, C_AIRPORT);
 
     // At wide ranges the airport collapses onto the "you are here" marker, and a
     // label there lands on the centre dot or the ring numbers. Draw the symbol
     // regardless, but only name it when there is genuinely room beside it.
     double fromCentre = hypot((double)(x - RADAR_CX), (double)(y - RADAR_CY));
-    if (fromCentre < 16.0) return;
+    if (fromCentre < 18.0) return;
 
     int lx = x + 7, ly = y + 2;
     int w = textW(f.airportCode, 1);
@@ -103,7 +134,7 @@ void drawAirport(Arduino_GFX* g, const Frame& f) {
     if (ly + CH_H1 > RADAR_CY + 2 && ly < RADAR_CY + CH_H1 + 4) ly = RADAR_CY - CH_H1 - 4;
     if (ly < HEADER_H + 1) ly = HEADER_H + 1;
     if (ly > 170 - CH_H1) ly = 170 - CH_H1;
-    text(g, lx, ly, 1, C_GRID, f.airportCode);
+    text(g, lx, ly, 1, C_AIRPORT, f.airportCode);
 }
 
 void drawHeader(Arduino_GFX* g, const Frame& f) {
@@ -154,6 +185,36 @@ void drawRadarGrid(Arduino_GFX* g, int rangeKm) {
     // You are here.
     g->drawCircle(RADAR_CX, RADAR_CY, 4, C_INK);
     g->fillCircle(RADAR_CX, RADAR_CY, 2, C_INK);
+}
+
+// Where each aircraft has been, as a dashed line running up to its current
+// position. Drawn before the aircraft so the arrowheads stay on top.
+void drawTrails(Arduino_GFX* g, const Frame& f) {
+    if (!f.snap) return;
+    double scale = (double)RADAR_R / (double)f.rangeKm;
+    trails::Point pts[trails::TRAIL_POINTS];
+
+    for (int i = 0; i < f.snap->count; i++) {
+        const adsb::Aircraft& a = f.snap->ac[i];
+        int n = trails::fetch(a.hex, pts, trails::TRAIL_POINTS);
+        if (n < 1) continue;
+
+        double phase = 0.0;
+        double px = RADAR_CX + pts[0].x * scale;
+        double py = RADAR_CY - pts[0].y * scale;
+        for (int k = 1; k < n; k++) {
+            double qx = RADAR_CX + pts[k].x * scale;
+            double qy = RADAR_CY - pts[k].y * scale;
+            phase = dashSegment(g, px, py, qx, qy, C_TRAIL, phase);
+            px = qx; py = qy;
+        }
+
+        // Join the newest sample to where the aircraft is right now, so the
+        // trail always ends at the arrowhead instead of trailing a gap.
+        double t = a.bearingDeg * M_PI / 180.0;
+        dashSegment(g, px, py, RADAR_CX + a.distKm * scale * sin(t),
+                    RADAR_CY - a.distKm * scale * cos(t), C_TRAIL, phase);
+    }
 }
 
 void drawPlanes(Arduino_GFX* g, const Frame& f) {
@@ -240,6 +301,7 @@ void draw(Arduino_GFX* g, const Frame& f) {
     g->fillScreen(C_GROUND);
     drawHeader(g, f);
     drawRadarGrid(g, f.rangeKm);
+    drawTrails(g, f);
     drawAirport(g, f);
     drawPlanes(g, f);
     drawPanel(g, f);

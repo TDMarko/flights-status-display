@@ -10,6 +10,7 @@
 #include "adsb.h"
 #include "config.h"
 #include "radar_ui.h"
+#include "trails.h"
 
 static const geo::LatLon RIGA{56.9496, 24.1052};
 
@@ -38,16 +39,28 @@ static void writePPM(const Arduino_GFX& g, const std::string& path) {
 
 static void render(const std::string& out, const adsb::Snapshot& snapIn, int rangeKm,
                    const char* cityName, radar_ui::Status status, const char* clock) {
-    adsb::Snapshot snap = snapIn;
-    adsb::computeRelative(snap, RIGA);
-    adsb::sortByDistance(snap);
-
     // Look the city up so the preview draws the same airport the firmware would.
     const City* city = &CITIES[0];
     for (int i = 0; i < CITY_COUNT; i++)
         if (strcmp(CITIES[i].name, cityName) == 0) city = &CITIES[i];
     geo::LatLon centre{city->lat, city->lon};
     geo::LatLon airport{city->airportLat, city->airportLon};
+
+    adsb::Snapshot snap = snapIn;
+    adsb::computeRelative(snap, centre);
+    adsb::sortByDistance(snap);
+
+    // Synthesise the history the firmware would have accumulated: rewind the
+    // sky by a full trail's worth of time, then step it forward recording as
+    // it goes, so each aircraft ends up back at its true position.
+    trails::clear();
+    const double stepSec = TRAIL_SAMPLE_MS / 1000.0;
+    adsb::Snapshot hist = snap;
+    adsb::deadReckon(hist, centre, -stepSec * (trails::TRAIL_POINTS - 1));
+    for (int k = 0; k < trails::TRAIL_POINTS; k++) {
+        trails::record(hist, 100000 + k * TRAIL_SAMPLE_MS, TRAIL_SAMPLE_MS);
+        if (k < trails::TRAIL_POINTS - 1) adsb::deadReckon(hist, centre, stepSec);
+    }
 
     Arduino_GFX gfx(320, 170);
     radar_ui::Frame f{cityName,
@@ -66,7 +79,7 @@ static void render(const std::string& out, const adsb::Snapshot& snapIn, int ran
 }
 
 // A busier sky than Riga happened to have when the fixtures were captured.
-static adsb::Snapshot syntheticBusy() {
+static adsb::Snapshot syntheticBusy(geo::LatLon centre) {
     std::string body = "{\"ac\":[";
     struct Row { const char* cs; const char* type; double brg, km, alt, track, rate; };
     const Row rows[] = {
@@ -84,8 +97,8 @@ static adsb::Snapshot syntheticBusy() {
     for (const Row& r : rows) {
         double t = r.brg * M_PI / 180.0;
         double north = r.km * cos(t), east = r.km * sin(t);
-        double lat = RIGA.lat + north / geo::KM_PER_DEG_LAT;
-        double lon = RIGA.lon + east / geo::kmPerDegLon(RIGA.lat);
+        double lat = centre.lat + north / geo::KM_PER_DEG_LAT;
+        double lon = centre.lon + east / geo::kmPerDegLon(centre.lat);
         char one[256];
         snprintf(one, sizeof(one),
                  "%s{\"hex\":\"4%05x\",\"flight\":\"%s\",\"t\":\"%s\",\"lat\":%.6f,"
@@ -109,7 +122,13 @@ int main(int argc, char** argv) {
     std::string body = readFile(fixtures + "/riga_5ac.json");
     if (!body.empty()) adsb::parse(body.c_str(), body.size(), real);
 
-    adsb::Snapshot busy = syntheticBusy();
+    geo::LatLon riga{CITIES[0].lat, CITIES[0].lon};
+    geo::LatLon stockholm = riga;
+    for (int i = 0; i < CITY_COUNT; i++)
+        if (strcmp(CITIES[i].name, "STOCKHOLM") == 0)
+            stockholm = {CITIES[i].lat, CITIES[i].lon};
+    adsb::Snapshot busy = syntheticBusy(riga);
+    adsb::Snapshot busyStockholm = syntheticBusy(stockholm);
     adsb::Snapshot empty;
 
     render(outDir + "/01_real_200km.ppm", real, 200, "RIGA", radar_ui::Status::Ok, "12:04:37");
@@ -117,7 +136,7 @@ int main(int argc, char** argv) {
     render(outDir + "/03_busy_100km.ppm", busy, 100, "RIGA", radar_ui::Status::Ok, "12:04:37");
     render(outDir + "/04_busy_20km.ppm", busy, 20, "RIGA", radar_ui::Status::Ok, "12:04:37");
     render(outDir + "/05_connecting.ppm", empty, 50, "RIGA", radar_ui::Status::Connecting, "");
-    render(outDir + "/06_stale.ppm", busy, 100, "STOCKHOLM", radar_ui::Status::Stale, "23:59:58");
-    render(outDir + "/07_header_worstcase.ppm", busy, 200, "STOCKHOLM", radar_ui::Status::NoData, "23:59:58");
+    render(outDir + "/06_stale.ppm", busyStockholm, 100, "STOCKHOLM", radar_ui::Status::Stale, "23:59:58");
+    render(outDir + "/07_header_worstcase.ppm", busyStockholm, 200, "STOCKHOLM", radar_ui::Status::NoData, "23:59:58");
     return 0;
 }

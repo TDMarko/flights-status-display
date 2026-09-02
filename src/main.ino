@@ -21,6 +21,7 @@
 #include "radar_ui.h"
 #include "secrets.h"
 #include "settings.h"
+#include "trails.h"
 
 // ---- Display: built from display_config.h ----
 #if defined(BUS_PARALLEL8)
@@ -200,6 +201,9 @@ static void renderFrame() {
     if (dt > 0.0 && gWorking.count > 0) adsb::deadReckon(gWorking, centre, dt);
     adsb::sortByDistance(gWorking);
 
+    trails::record(gWorking, now, TRAIL_SAMPLE_MS);
+    trails::expire(now, TRAIL_MAX_AGE_MS);
+
     char clock[12];
     clockString(clock, sizeof(clock));
 
@@ -247,6 +251,7 @@ void loop() {
     if (buttons::cityPressed()) {
         settings::nextCity();
         gWorking.count = 0;      // the old city's traffic is meaningless here
+        trails::clear();         // and trails are offsets from the old centre
         gLastGoodMs = 0;
         gRefetchNow = true;
     }

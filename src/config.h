@@ -31,6 +31,18 @@
   #define C_CHIP_FG C_GROUND
 #endif
 
+// The airport beacon deliberately breaks the two-colour scheme so it reads as a
+// fixed place at a glance, never as traffic. Red works on both grounds.
+#define C_AIRPORT C_RGB(232, 32, 32)
+
+// Aircraft history trails sit between the grid and the ink: clearly subordinate
+// to the aircraft they belong to, clearly above the rings.
+#ifdef CLASSIC_SCHEME
+  #define C_TRAIL C_RGB(40, 150, 60)
+#else
+  #define C_TRAIL C_RGB(22, 86, 34)
+#endif
+
 // ---------------------------------------------------------------------------
 // Cities — button 1 (BOOT / GPIO0) cycles this list. Index 0 is the default.
 // Add your own: {"NAME", latitude, longitude}. Names render at text size 1,
@@ -74,6 +86,18 @@ static const uint32_t DISCARD_AFTER_MS  = 120000; // drop the aircraft list enti
 static const uint32_t HTTP_TIMEOUT_MS   = 8000;
 static const uint32_t WIFI_RETRY_MS     = 5000;
 static const uint32_t BUTTON_DEBOUNCE_MS = 40;
+
+// ---------------------------------------------------------------------------
+// History trails
+//
+// TRAIL_POINTS x TRAIL_SAMPLE_MS is how far back a trail reaches. At the
+// default 32 x 5 s that is about two and a half minutes of flight: roughly
+// 30 km behind an airliner, which is a long streak at 20 km range and a short
+// stub at 200 km. Raise TRAIL_POINTS (in trails.h) for longer history; it
+// costs 8 bytes per point per aircraft.
+// ---------------------------------------------------------------------------
+static const uint32_t TRAIL_SAMPLE_MS  = 5000;
+static const uint32_t TRAIL_MAX_AGE_MS = 120000;  // forget an aircraft not seen this long
 
 // ---------------------------------------------------------------------------
 // Buttons (active low, internal pull-ups)
