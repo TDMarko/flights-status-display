@@ -9,19 +9,24 @@
 // ---------------------------------------------------------------------------
 // #define CLASSIC_SCHEME
 
+// The panel backlight is a simple on/off enable and is already driven full on,
+// so screen brightness is set by these colours. Raise the C_GROUND components
+// together to brighten the whole face; keep C_GRID well below it or the rings
+// stop reading as background.
+
 // Named C_RGB rather than RGB565 because Arduino_GFX already defines that.
 #define C_RGB(r, g, b) ((uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3)))
 
 #ifdef CLASSIC_SCHEME
   #define C_GROUND C_RGB(0, 0, 0)        // black background
-  #define C_INK    C_RGB(64, 255, 96)    // phosphor green data
-  #define C_GRID   C_RGB(24, 104, 40)    // dim green rings
+  #define C_INK    C_RGB(96, 255, 128)   // phosphor green data
+  #define C_GRID   C_RGB(32, 132, 52)    // dim green rings
   #define C_CHIP_BG C_INK
   #define C_CHIP_FG C_GROUND
 #else
-  #define C_GROUND C_RGB(64, 205, 88)    // phosphor green background
+  #define C_GROUND C_RGB(96, 236, 112)   // phosphor green background
   #define C_INK    C_RGB(0, 0, 0)        // black data
-  #define C_GRID   C_RGB(30, 122, 48)    // darker green rings, sit under the data
+  #define C_GRID   C_RGB(38, 146, 58)    // darker green rings, sit under the data
   #define C_CHIP_BG C_INK
   #define C_CHIP_FG C_GROUND
 #endif

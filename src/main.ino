@@ -174,7 +174,7 @@ static void clockString(char *out, size_t n) {
     struct tm tm_now;
     // Before NTP has synced the clock sits in 1970; show nothing rather than lie.
     if (now < 1600000000 || !localtime_r(&now, &tm_now)) { out[0] = '\0'; return; }
-    strftime(out, n, "%H:%M", &tm_now);
+    strftime(out, n, "%H:%M:%S", &tm_now);
 }
 
 static void renderFrame() {
@@ -200,7 +200,7 @@ static void renderFrame() {
     if (dt > 0.0 && gWorking.count > 0) adsb::deadReckon(gWorking, centre, dt);
     adsb::sortByDistance(gWorking);
 
-    char clock[8];
+    char clock[12];
     clockString(clock, sizeof(clock));
 
     radar_ui::Frame frame{

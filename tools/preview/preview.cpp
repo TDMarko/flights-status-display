@@ -96,11 +96,12 @@ int main(int argc, char** argv) {
     adsb::Snapshot busy = syntheticBusy();
     adsb::Snapshot empty;
 
-    render(outDir + "/01_real_200km.ppm", real, 200, "RIGA", radar_ui::Status::Ok, "12:04");
-    render(outDir + "/02_real_50km.ppm", real, 50, "RIGA", radar_ui::Status::Ok, "12:04");
-    render(outDir + "/03_busy_100km.ppm", busy, 100, "RIGA", radar_ui::Status::Ok, "12:04");
-    render(outDir + "/04_busy_20km.ppm", busy, 20, "RIGA", radar_ui::Status::Ok, "12:04");
+    render(outDir + "/01_real_200km.ppm", real, 200, "RIGA", radar_ui::Status::Ok, "12:04:37");
+    render(outDir + "/02_real_50km.ppm", real, 50, "RIGA", radar_ui::Status::Ok, "12:04:37");
+    render(outDir + "/03_busy_100km.ppm", busy, 100, "RIGA", radar_ui::Status::Ok, "12:04:37");
+    render(outDir + "/04_busy_20km.ppm", busy, 20, "RIGA", radar_ui::Status::Ok, "12:04:37");
     render(outDir + "/05_connecting.ppm", empty, 50, "RIGA", radar_ui::Status::Connecting, "");
-    render(outDir + "/06_stale.ppm", busy, 100, "STOCKHOLM", radar_ui::Status::Stale, "23:59");
+    render(outDir + "/06_stale.ppm", busy, 100, "STOCKHOLM", radar_ui::Status::Stale, "23:59:58");
+    render(outDir + "/07_header_worstcase.ppm", busy, 200, "STOCKHOLM", radar_ui::Status::NoData, "23:59:58");
     return 0;
 }
