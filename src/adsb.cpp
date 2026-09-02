@@ -1,0 +1,138 @@
+#include "adsb.h"
+
+#include <ArduinoJson.h>
+
+#include <cmath>
+#include <cstring>
+
+namespace adsb {
+
+namespace {
+
+// Copies at most n-1 bytes and strips the trailing spaces adsb.lol pads
+// callsigns with ("RYR9JC  " -> "RYR9JC").
+void copyTrimmed(char* dst, size_t n, const char* src) {
+    if (!src) { dst[0] = '\0'; return; }
+    size_t len = strlen(src);
+    while (len > 0 && (src[len - 1] == ' ' || src[len - 1] == '\t')) len--;
+    if (len > n - 1) len = n - 1;
+    memcpy(dst, src, len);
+    dst[len] = '\0';
+}
+
+float numberOr(JsonVariantConst v, float fallback) {
+    return v.is<double>() ? (float)v.as<double>() : fallback;
+}
+
+// Only these fields survive deserialization, which keeps a full response well
+// inside the ESP32's heap no matter how busy the sky is.
+void buildFilter(JsonDocument& filter) {
+    JsonObject f = filter["ac"].add<JsonObject>();
+    f["hex"] = true;
+    f["flight"] = true;
+    f["r"] = true;
+    f["t"] = true;
+    f["lat"] = true;
+    f["lon"] = true;
+    f["alt_baro"] = true;
+    f["gs"] = true;
+    f["track"] = true;
+    f["baro_rate"] = true;
+    f["seen_pos"] = true;
+}
+
+}  // namespace
+
+bool parse(const char* json, size_t len, Snapshot& out) {
+    JsonDocument filter;
+    buildFilter(filter);
+
+    JsonDocument doc;
+    DeserializationError err =
+        deserializeJson(doc, json, len, DeserializationOption::Filter(filter));
+    if (err) return false;
+
+    JsonArrayConst arr = doc["ac"].as<JsonArrayConst>();
+    if (arr.isNull()) return false;
+
+    Snapshot parsed;
+    for (JsonObjectConst o : arr) {
+        if (parsed.count >= MAX_AIRCRAFT) break;
+
+        JsonVariantConst lat = o["lat"];
+        JsonVariantConst lon = o["lon"];
+        if (!lat.is<double>() || !lon.is<double>()) continue;  // no position, nothing to draw
+
+        Aircraft& a = parsed.ac[parsed.count];
+        copyTrimmed(a.hex, sizeof(a.hex), o["hex"] | "");
+        copyTrimmed(a.reg, sizeof(a.reg), o["r"] | "");
+        copyTrimmed(a.type, sizeof(a.type), o["t"] | "");
+        copyTrimmed(a.callsign, sizeof(a.callsign), o["flight"] | "");
+        if (a.callsign[0] == '\0') copyTrimmed(a.callsign, sizeof(a.callsign), a.reg);
+        if (a.callsign[0] == '\0') copyTrimmed(a.callsign, sizeof(a.callsign), a.hex);
+
+        a.lat = lat.as<double>();
+        a.lon = lon.as<double>();
+
+        JsonVariantConst alt = o["alt_baro"];
+        a.onGround = alt.is<const char*>();  // adsb.lol sends the string "ground"
+        a.hasAlt = alt.is<double>();
+        a.altFt = a.hasAlt ? (float)alt.as<double>() : 0.0f;
+
+        a.gsKt = numberOr(o["gs"], 0.0f);
+        a.trackDeg = numberOr(o["track"], 0.0f);
+        a.baroRateFpm = numberOr(o["baro_rate"], 0.0f);
+        a.seenPosSec = numberOr(o["seen_pos"], 0.0f);
+        a.distKm = 0.0f;
+        a.bearingDeg = 0.0f;
+        parsed.count++;
+    }
+
+    out = parsed;
+    return true;
+}
+
+void computeRelative(Snapshot& s, geo::LatLon centre) {
+    for (int i = 0; i < s.count; i++) {
+        geo::LatLon p{s.ac[i].lat, s.ac[i].lon};
+        s.ac[i].distKm = (float)geo::distanceKm(centre, p);
+        // Narrowing to float can round a bearing of 359.9999 up to 360.0,
+        // which would break the [0, 360) contract callers rely on.
+        float b = (float)geo::bearingDeg(centre, p);
+        s.ac[i].bearingDeg = (b >= 360.0f) ? 0.0f : b;
+    }
+}
+
+void sortByDistance(Snapshot& s) {
+    // Insertion sort: n <= 32 and the list is nearly sorted between fetches.
+    for (int i = 1; i < s.count; i++) {
+        Aircraft key = s.ac[i];
+        int j = i - 1;
+        while (j >= 0 && s.ac[j].distKm > key.distKm) {
+            s.ac[j + 1] = s.ac[j];
+            j--;
+        }
+        s.ac[j + 1] = key;
+    }
+}
+
+void deadReckon(Snapshot& s, geo::LatLon centre, double dtSec) {
+    for (int i = 0; i < s.count; i++) {
+        if (s.ac[i].onGround || s.ac[i].gsKt <= 0.0f) continue;
+        geo::LatLon moved = geo::advance({s.ac[i].lat, s.ac[i].lon}, s.ac[i].trackDeg,
+                                         s.ac[i].gsKt, dtSec);
+        s.ac[i].lat = moved.lat;
+        s.ac[i].lon = moved.lon;
+    }
+    computeRelative(s, centre);
+}
+
+int countWithin(const Snapshot& s, double rangeKm) {
+    int n = 0;
+    for (int i = 0; i < s.count; i++) {
+        if (s.ac[i].distKm <= rangeKm) n++;
+    }
+    return n;
+}
+
+}  // namespace adsb
