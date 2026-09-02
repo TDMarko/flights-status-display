@@ -28,9 +28,12 @@ charger and it works. No computer, no cloud service, no companion app.
   reporting themselves on the ground sit on top of it.
 - **History trails**: a dashed line behind each aircraft showing roughly the
   last two and a half minutes of its flight, clipped to the outer ring.
-- **Side panel** listing the four nearest, sorted by distance: callsign,
-  distance, altitude in metres, and `^` / `v` / `-` for climbing, descending,
-  or level. The nearest is inverted so you read it first.
+- **Side panel** listing the four nearest, sorted by distance. Three lines
+  each: callsign, then the route and operator in tiny text
+  (`RIX>ARN airBaltic`), then distance, altitude in metres and `^` / `v` / `-`
+  for climbing, descending or level. The nearest is inverted so you read it
+  first. The header already carries the in-range count, so the panel spends its
+  space on aircraft rather than a "+N more" footer.
 - **Header** with the city, how many aircraft are in range, the range, a clock,
   and a status badge when something is wrong.
 
@@ -114,6 +117,29 @@ data. Nothing else changes.
 about 2.5 minutes, roughly 30 km behind an airliner. Each point costs 8 bytes
 per aircraft.
 
+## Where the route and operator come from
+
+The aircraft feed carries neither, so both are derived from the callsign.
+
+**Operator** comes from a table in `src/airlines.cpp` mapping the three-letter
+ICAO designator to a name — `BTI9UG` starts with `BTI`, which is airBaltic. The
+table covers the carriers that actually appear over northern Europe plus the
+major long-haul names. An unknown designator resolves to nothing rather than a
+guess, and the panel falls back to the registration, then the aircraft type. A
+wrong airline is worse than none, because the registration is still true.
+
+**Route** comes from `vrs-standing-data.adsb.lol`, which serves a static JSON
+file per callsign giving the airport pair (`BRU-RIX`, drawn as `BRU>RIX`).
+A route does not change during a flight, so each callsign is looked up once and
+cached — one extra request per newly seen aircraft, not one per refresh, and at
+most one lookup per ten-second cycle so the panel fills in over a few refreshes
+instead of firing a burst. Multi-leg services show all three legs
+(`CAN>CKG>AMS`). Aircraft with no published route keep the operator line.
+
+Note this host uses a different certificate authority from the aircraft feed,
+so `src/cert_roots.h` pins both ISRG Root X1 (Let's Encrypt) and GTS Root R4
+(Google Trust Services) as one concatenated PEM bundle.
+
 ## Data source
 
 [adsb.lol](https://adsb.lol) — a free, community-fed ADS-B aggregator. No API
@@ -122,8 +148,7 @@ selected range and polls every 10 seconds; a typical response is a few
 kilobytes. Coverage comes from volunteer receivers, so an aircraft with no
 nearby feeder will not appear.
 
-TLS is verified against a pinned ISRG Root X1 certificate (`src/cert_isrg.h`),
-valid to 2035.
+TLS is verified against the pinned roots in `src/cert_roots.h`.
 
 ## When something is wrong
 
@@ -143,6 +168,8 @@ Pure logic is kept free of Arduino headers so it can be tested on your machine.
 | `src/geo.cpp` | Projection, distance, bearing, dead reckoning, unit conversion. |
 | `src/adsb.cpp` | JSON to aircraft, filtering, distance sort, staleness. |
 | `src/trails.cpp` | Position history per aircraft, keyed by ICAO hex. |
+| `src/airlines.cpp` | ICAO operator designator to airline name. |
+| `src/routes.cpp` | Origin/destination lookup and its cache. |
 | `src/radar_ui.cpp` | All drawing. |
 | `src/settings.cpp` | Saves city and range to flash. |
 | `src/buttons.cpp` | Debounce. |
@@ -159,8 +186,8 @@ request never stalls the animation.
 pio test -e native
 ```
 
-45 unit tests covering the geometry, the ADS-B parser, the history trails, and
-the city/airport table, run on your machine against real captured adsb.lol responses in
+67 unit tests covering the geometry, the ADS-B parser, the history trails, the
+airline table, the route cache, and the city/airport table, run on your machine against real captured adsb.lol responses in
 `test/fixtures/`.
 
 ## Previewing the UI without a board

@@ -14,11 +14,12 @@
 
 #include "adsb.h"
 #include "buttons.h"
-#include "cert_isrg.h"
+#include "cert_roots.h"
 #include "config.h"
 #include "display_config.h"
 #include "geo.h"
 #include "radar_ui.h"
+#include "routes.h"
 #include "secrets.h"
 #include "settings.h"
 #include "trails.h"
@@ -90,10 +91,32 @@ static void connectWiFi() {
     }
 }
 
-// One HTTPS GET against adsb.lol, parsed straight into `out`.
-static bool fetchAircraft(adsb::Snapshot &out) {
+// One HTTPS GET, body into `out`. Shared by the aircraft feed and the route
+// files, which live on different hosts under different roots.
+static bool httpGetBody(const char *url, String &out) {
     if (WiFi.status() != WL_CONNECTED) return false;
 
+    WiFiClientSecure client;
+    client.setCACert(ADSB_ROOT_CAS);
+    client.setTimeout(HTTP_TIMEOUT_MS / 1000);
+
+    HTTPClient http;
+    http.setConnectTimeout(HTTP_TIMEOUT_MS);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setUserAgent("flydar/1.0 (+esp32)");
+    if (!http.begin(client, url)) return false;
+
+    int code = http.GET();
+    if (code != HTTP_CODE_OK) {
+        http.end();
+        return false;
+    }
+    out = http.getString();
+    http.end();
+    return true;
+}
+
+static bool fetchAircraft(adsb::Snapshot &out) {
     geo::LatLon c = currentCentre();
     // adsb.lol takes a radius in nautical miles; round up so the outer ring is
     // always fully covered.
@@ -105,31 +128,33 @@ static bool fetchAircraft(adsb::Snapshot &out) {
     snprintf(url, sizeof(url), "https://api.adsb.lol/v2/lat/%.4f/lon/%.4f/dist/%d",
              c.lat, c.lon, nmi);
 
-    WiFiClientSecure client;
-    client.setCACert(ISRG_ROOT_X1);
-    client.setTimeout(HTTP_TIMEOUT_MS / 1000);
-
-    HTTPClient http;
-    http.setConnectTimeout(HTTP_TIMEOUT_MS);
-    http.setTimeout(HTTP_TIMEOUT_MS);
-    http.setUserAgent("flydar/1.0 (+esp32)");
-    if (!http.begin(client, url)) return false;
-
-    int code = http.GET();
-    if (code != HTTP_CODE_OK) {
-        Serial.printf("fetch: HTTP %d\n", code);
-        http.end();
-        return false;
-    }
-
-    String body = http.getString();
-    http.end();
-
+    String body;
+    if (!httpGetBody(url, body)) { Serial.println("fetch: failed"); return false; }
     if (!adsb::parse(body.c_str(), body.length(), out)) {
         Serial.println("fetch: bad JSON");
         return false;
     }
     return true;
+}
+
+// Looks up one callsign's origin/destination and remembers the answer, so a
+// route costs one request per aircraft ever, not one per refresh. The static
+// route files are laid out by the first two characters of the callsign.
+static void fetchOneRoute(const char *callsign) {
+    char url[160];
+    snprintf(url, sizeof(url), "https://vrs-standing-data.adsb.lol/routes/%c%c/%s.json",
+             callsign[0], callsign[1], callsign);
+
+    String body;
+    char route[routes::ROUTE_LEN];
+    if (httpGetBody(url, body) &&
+        routes::parseRouteBody(body.c_str(), body.length(), route, sizeof(route))) {
+        routes::store(callsign, route);
+        Serial.printf("route: %s %s\n", callsign, route);
+    } else {
+        // Remember the miss too, or every refresh would ask again.
+        routes::store(callsign, "");
+    }
 }
 
 // Runs on the other core so a slow or failing request never stalls the radar.
@@ -146,6 +171,7 @@ static void fetchTask(void *) {
         adsb::Snapshot fresh;
         if (fetchAircraft(fresh)) {
             adsb::computeRelative(fresh, currentCentre());
+            adsb::sortByDistance(fresh);
             Serial.printf("fetch: %d aircraft, %d within %dkm\n", fresh.count,
                           adsb::countWithin(fresh, currentRangeKm()), currentRangeKm());
             xSemaphoreTake(gLock, portMAX_DELAY);
@@ -153,6 +179,11 @@ static void fetchTask(void *) {
             gHasNew = true;
             gLastGoodMs = millis();
             xSemaphoreGive(gLock);
+
+            // At most one route lookup per cycle: the panel fills in over the
+            // next few refreshes instead of firing a burst of requests.
+            const char *pending = routes::nextPending(fresh, PANEL_ROWS);
+            if (pending) fetchOneRoute(pending);
         }
     }
 }
@@ -252,6 +283,7 @@ void loop() {
         settings::nextCity();
         gWorking.count = 0;      // the old city's traffic is meaningless here
         trails::clear();         // and trails are offsets from the old centre
+        routes::clear();         // free the cache for the new city's traffic
         gLastGoodMs = 0;
         gRefetchNow = true;
     }

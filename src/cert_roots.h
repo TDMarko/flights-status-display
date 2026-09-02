@@ -1,11 +1,16 @@
 #pragma once
-// ISRG Root X1 — the Let's Encrypt root that api.adsb.lol's chain terminates in
-// (leaf <- Let's Encrypt YR2 <- ISRG Root YR <- ISRG Root X1). Valid until
-// 2035-06-04. If adsb.lol ever moves to a different CA, replace this with:
-//   openssl s_client -connect api.adsb.lol:443 -showcerts
-// and take the last certificate in the chain.
+// Trusted roots, as one concatenated PEM bundle. mbedTLS parses a chain of PEM
+// blocks from a single buffer, so both are pinned with one setCACert call.
+//
+//   ISRG Root X1        (Let's Encrypt) -> api.adsb.lol, the aircraft feed
+//                                          expires 2035-06-04
+//   GTS Root R4  (Google Trust Services) -> vrs-standing-data.adsb.lol, the
+//                                          route files; expires 2036-06-22
+//
+// If either host changes CA, replace the matching block with the last
+// certificate from:  openssl s_client -connect <host>:443 -showcerts
 
-static const char ISRG_ROOT_X1[] PROGMEM =
+static const char ADSB_ROOT_CAS[] PROGMEM =
     "-----BEGIN CERTIFICATE-----\n"
     "MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw\n"
     "TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh\n"
@@ -36,4 +41,17 @@ static const char ISRG_ROOT_X1[] PROGMEM =
     "4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA\n"
     "mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d\n"
     "emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=\n"
+    "-----END CERTIFICATE-----\n"
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD\n"
+    "VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG\n"
+    "A1UEAxMLR1RTIFJvb3QgUjQwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw\n"
+    "WjBHMQswCQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2Vz\n"
+    "IExMQzEUMBIGA1UEAxMLR1RTIFJvb3QgUjQwdjAQBgcqhkjOPQIBBgUrgQQAIgNi\n"
+    "AATzdHOnaItgrkO4NcWBMHtLSZ37wWHO5t5GvWvVYRg1rkDdc/eJkTBa6zzuhXyi\n"
+    "QHY7qca4R9gq55KRanPpsXI5nymfopjTX15YhmUPoYRlBtHci8nHc8iMai/lxKvR\n"
+    "HYqjQjBAMA4GA1UdDwEB/wQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW\n"
+    "BBSATNbrdP9JNqPV2Py1PsVq8JQdjDAKBggqhkjOPQQDAwNpADBmAjEA6ED/g94D\n"
+    "9J+uHXqnLrmvT/aDHQ4thQEd0dlq7A/Cr8deVl5c1RxYIigL9zC2L7F8AjEA8GE8\n"
+    "p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD\n"
     "-----END CERTIFICATE-----\n";

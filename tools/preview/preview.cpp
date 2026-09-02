@@ -10,6 +10,7 @@
 #include "adsb.h"
 #include "config.h"
 #include "radar_ui.h"
+#include "routes.h"
 #include "trails.h"
 
 static const geo::LatLon RIGA{56.9496, 24.1052};
@@ -127,6 +128,20 @@ int main(int argc, char** argv) {
     for (int i = 0; i < CITY_COUNT; i++)
         if (strcmp(CITIES[i].name, "STOCKHOLM") == 0)
             stockholm = {CITIES[i].lat, CITIES[i].lon};
+    // Seed the route cache the way the board fills it in from adsb.lol, and
+    // leave a couple of aircraft without one so the fallbacks are visible.
+    routes::store("BTI1PA", "RIX>ARN");
+    routes::store("RYR9JC", "STN>RIX");
+    routes::store("SAS742", "CPH>HEL");
+    routes::store("AFL2311", "LED>KGD");
+    routes::store("DLH88X", "FRA>HEL");
+    routes::store("BTI711", "RIX>TLL");
+    routes::store("UZB211", "TAS>LHR");
+    routes::store("FIN1122", "HEL>RIX");
+    routes::store("BTI9KV", "RIX>DXB");
+    routes::store("PYR013", "");     // API has no route: falls back to operator
+    routes::store("YLEVI", "");      // light aircraft: falls back to registration
+
     adsb::Snapshot busy = syntheticBusy(riga);
     adsb::Snapshot busyStockholm = syntheticBusy(stockholm);
     adsb::Snapshot empty;

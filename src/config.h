@@ -35,6 +35,14 @@
 // fixed place at a glance, never as traffic. Red works on both grounds.
 #define C_AIRPORT C_RGB(232, 32, 32)
 
+// Secondary panel text: darker than the rings so it stays legible at text
+// size 1, lighter than the ink so it still reads as subordinate.
+#ifdef CLASSIC_SCHEME
+  #define C_TEXT_DIM C_RGB(56, 190, 80)
+#else
+  #define C_TEXT_DIM C_RGB(24, 96, 38)
+#endif
+
 // Aircraft history trails sit between the grid and the ink: clearly subordinate
 // to the aircraft they belong to, clearly above the rings.
 #ifdef CLASSIC_SCHEME

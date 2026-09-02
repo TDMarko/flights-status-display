@@ -6,6 +6,8 @@
 
 #include "config.h"
 #include "geo.h"
+#include "airlines.h"
+#include "routes.h"
 #include "trails.h"
 
 namespace radar_ui {
@@ -57,6 +59,32 @@ char verticalArrow(const adsb::Aircraft& a) {
     if (a.baroRateFpm > 200.0f) return '^';
     if (a.baroRateFpm < -200.0f) return 'v';
     return '-';
+}
+
+// The panel is 22 characters wide at text size 1. Compose the most useful
+// identity that fits: route plus operator when both are known and fit, then
+// route alone, then operator, then registration, then aircraft type. The route
+// is never dropped to make room for the operator — it is the more specific
+// fact, and the operator is already implied by the callsign prefix.
+constexpr int PANEL_CHARS = PANEL_W / CH_W1;
+
+void formatIdentity(const adsb::Aircraft& a, char* out, size_t n) {
+    const char* route = routes::lookup(a.callsign);   // nullptr = not looked up yet
+    const char* airline = airlines::fromCallsign(a.callsign);
+    bool haveRoute = route && route[0];
+
+    if (haveRoute && airline &&
+        (int)(strlen(route) + 1 + strlen(airline)) <= PANEL_CHARS) {
+        snprintf(out, n, "%s %s", route, airline);
+    } else if (haveRoute) {
+        snprintf(out, n, "%s", route);
+    } else if (airline) {
+        snprintf(out, n, "%s", airline);
+    } else if (a.reg[0]) {
+        snprintf(out, n, "%s", a.reg);
+    } else {
+        snprintf(out, n, "%s", a.type);
+    }
 }
 
 void formatDistance(float km, char* out, size_t n) {
@@ -254,7 +282,7 @@ void drawPanelEmpty(Arduino_GFX* g, const Frame& f) {
     if (f.status == Status::Connecting) msg = "CONNECTING";
     else if (f.status == Status::NoData) msg = "NO DATA";
     int x = PANEL_X + (PANEL_W - textW(msg, 1)) / 2;
-    text(g, x, RADAR_CY - CH_H1 / 2, 1, C_GRID, msg);
+    text(g, x, RADAR_CY - CH_H1 / 2, 1, C_TEXT_DIM, msg);
 }
 
 void drawPanel(Arduino_GFX* g, const Frame& f) {
@@ -262,7 +290,10 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
 
     if (!f.snap || f.inRange == 0) { drawPanelEmpty(g, f); return; }
 
-    const int rowH = 34;
+    // Three lines per entry: callsign, then route/operator, then the numbers.
+    // The header already reports how many are in range, so the panel spends its
+    // last rows on aircraft rather than on a "+N more" footer.
+    const int rowH = 36;
     int y = HEADER_H + 4;
     int shown = 0;
 
@@ -270,28 +301,24 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
         const adsb::Aircraft& a = f.snap->ac[i];
         if (a.distKm > (float)f.rangeKm) continue;
 
-        char dist[12], alt[12], line2[28];
+        char ident[PANEL_CHARS + 2], dist[12], alt[12], stats[28];
+        formatIdentity(a, ident, sizeof(ident));
         formatDistance(a.distKm, dist, sizeof(dist));
         formatAltitude(a, alt, sizeof(alt));
-        snprintf(line2, sizeof(line2), "%s %s %c", dist, alt, verticalArrow(a));
+        snprintf(stats, sizeof(stats), "%s %s %c", dist, alt, verticalArrow(a));
 
         if (shown == 0) {
             // Nearest aircraft: inverted, so it is the first thing you read.
-            chip(g, PANEL_X - 2, y - 2, PANEL_W - 2, CH_H2 + 4, 2, a.callsign);
-            text(g, PANEL_X, y + CH_H2 + 5, 1, C_INK, line2);
+            chip(g, PANEL_X - 2, y - 2, PANEL_W - 2, CH_H2 + 2, 2, a.callsign);
+            text(g, PANEL_X, y + 17, 1, C_INK, ident);
+            text(g, PANEL_X, y + 25, 1, C_INK, stats);
         } else {
             text(g, PANEL_X, y, 2, C_INK, a.callsign);
-            text(g, PANEL_X, y + CH_H2 + 3, 1, C_GRID, line2);
+            text(g, PANEL_X, y + 17, 1, C_TEXT_DIM, ident);
+            text(g, PANEL_X, y + 25, 1, C_TEXT_DIM, stats);
         }
         y += rowH;
         shown++;
-    }
-
-    int extra = f.inRange - shown;
-    if (extra > 0) {
-        char buf[20];
-        snprintf(buf, sizeof(buf), "+%d more", extra);
-        text(g, PANEL_X, 170 - CH_H1 - 2, 1, C_GRID, buf);
     }
 }
 

@@ -170,6 +170,29 @@ selected range must not scribble across the header or the side panel. A final
 segment joins the newest sample to the aircraft's current position so the trail
 ends at the arrowhead.
 
+## Operator and route
+
+Neither is in the aircraft feed. Both are derived from the callsign.
+
+`airlines` maps the three-letter ICAO operator designator to a name. A callsign
+qualifies only when its first three characters are letters and the fourth is a
+digit, which excludes registrations and private callsigns. An unknown
+designator returns nothing rather than a guess; the panel then falls back to
+the registration, then the aircraft type. Names are capped at 14 characters so
+a route still fits beside them on a 22-character line, and the table is kept
+sorted with tests enforcing sorting, uniqueness, ASCII and length.
+
+`routes` fetches `https://vrs-standing-data.adsb.lol/routes/<AB>/<CALLSIGN>.json`,
+where `<AB>` is the first two characters of the callsign, and keeps the answer.
+Routes do not change mid-flight, so this is one request per newly seen
+aircraft. At most one lookup runs per fetch cycle. Misses are cached too, or
+every refresh would ask again. The parser must reject an HTML body, because
+the host answers an unknown callsign with a landing page rather than a 404.
+
+That host uses Google Trust Services while the aircraft feed uses Let's
+Encrypt, so `cert_roots.h` pins both roots as one concatenated PEM bundle;
+mbedTLS parses a chain of PEM blocks from a single buffer.
+
 ## Failure behaviour
 
 | Condition                | Behaviour                                                          |
