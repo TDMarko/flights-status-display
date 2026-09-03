@@ -32,6 +32,7 @@ void buildFilter(JsonDocument& filter) {
     f["flight"] = true;
     f["r"] = true;
     f["t"] = true;
+    f["category"] = true;
     f["lat"] = true;
     f["lon"] = true;
     f["alt_baro"] = true;
@@ -63,10 +64,17 @@ bool parse(const char* json, size_t len, Snapshot& out) {
         JsonVariantConst lon = o["lon"];
         if (!lat.is<double>() || !lon.is<double>()) continue;  // no position, nothing to draw
 
+        // ADS-B emitter category C is surface vehicles and fixed obstacles:
+        // C1/C2 airport ground vehicles, C3 point obstacles such as masts and
+        // towers, C4/C5 obstacle groups and lines. None of it is traffic.
+        const char* cat = o["category"] | "";
+        if (cat[0] == 'C' || cat[0] == 'c') continue;
+
         Aircraft& a = parsed.ac[parsed.count];
         copyTrimmed(a.hex, sizeof(a.hex), o["hex"] | "");
         copyTrimmed(a.reg, sizeof(a.reg), o["r"] | "");
         copyTrimmed(a.type, sizeof(a.type), o["t"] | "");
+        copyTrimmed(a.category, sizeof(a.category), cat);
         copyTrimmed(a.callsign, sizeof(a.callsign), o["flight"] | "");
         if (a.callsign[0] == '\0') copyTrimmed(a.callsign, sizeof(a.callsign), a.reg);
         if (a.callsign[0] == '\0') copyTrimmed(a.callsign, sizeof(a.callsign), a.hex);

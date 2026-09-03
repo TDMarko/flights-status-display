@@ -16,6 +16,7 @@ struct Aircraft {
     char callsign[CALLSIGN_LEN]; // trailing padding stripped; falls back to registration, then hex
     char reg[10];                // tail number, empty when unknown
     char type[6];                // ICAO type designator, e.g. "B738"
+    char category[4];            // ADS-B emitter category, e.g. "A3"
     double lat;
     double lon;
     float altFt;                 // barometric altitude in feet; 0 when on the ground
@@ -34,8 +35,11 @@ struct Snapshot {
     int count = 0;
 };
 
-// Decodes the JSON body. Aircraft without a position are dropped. Returns false
-// when the body is not valid JSON or has no "ac" array, leaving `out` untouched.
+// Decodes the JSON body. Aircraft without a position are dropped, as are
+// emitter category C contacts: those are surface vehicles and fixed obstacles
+// (masts, towers, cranes), which are not traffic and never fly overhead.
+// Returns false when the body is not valid JSON or has no "ac" array, leaving
+// `out` untouched.
 bool parse(const char* json, size_t len, Snapshot& out);
 
 // Fills distKm and bearingDeg for every aircraft, relative to the radar centre.

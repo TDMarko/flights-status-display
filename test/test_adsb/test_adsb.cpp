@@ -183,6 +183,40 @@ static void test_dead_reckon_leaves_stationary_aircraft_alone() {
 // real address here: test fixtures end up in the public history.
 static const geo::LatLon TEST_HOME{57.0000, 24.2000};
 
+static void test_ground_obstacles_and_vehicles_are_not_traffic() {
+    // Emitter category C is surface vehicles and fixed obstacles. A mast that
+    // never moves has no business in a list of aircraft overhead.
+    const char* body =
+        "{\"ac\":[{\"hex\":\"c00001\",\"flight\":\"TOWER1\",\"category\":\"C3\","
+        "\"lat\":56.95,\"lon\":24.10},"
+        "{\"hex\":\"c00002\",\"flight\":\"SWEEPER\",\"category\":\"C2\","
+        "\"lat\":56.92,\"lon\":23.97},"
+        "{\"hex\":\"c00003\",\"flight\":\"LINEOBS\",\"category\":\"C5\","
+        "\"lat\":56.93,\"lon\":24.00},"
+        "{\"hex\":\"a00001\",\"flight\":\"REALJET\",\"category\":\"A3\","
+        "\"lat\":56.96,\"lon\":24.12}]}";
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_EQUAL_INT(1, s.count);
+    TEST_ASSERT_EQUAL_STRING("REALJET", s.ac[0].callsign);
+    TEST_ASSERT_EQUAL_STRING("A3", s.ac[0].category);
+}
+
+static void test_things_that_actually_fly_are_kept() {
+    // Category B is gliders, balloons, parachutists, ultralights and drones.
+    // They fly, so they belong on the radar; and plenty of contacts carry no
+    // category at all, which must not exclude them either.
+    const char* body =
+        "{\"ac\":[{\"hex\":\"b00001\",\"flight\":\"GLIDER1\",\"category\":\"B1\","
+        "\"lat\":56.95,\"lon\":24.10},"
+        "{\"hex\":\"b00004\",\"flight\":\"DRONE1\",\"category\":\"B6\","
+        "\"lat\":56.96,\"lon\":24.11},"
+        "{\"hex\":\"n00001\",\"flight\":\"NOCAT\",\"lat\":56.97,\"lon\":24.13}]}";
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_EQUAL_INT(3, s.count);
+}
+
 static void test_nearest_to_point_finds_what_is_overhead() {
     // Two aircraft: one right over the test home, one well away from it.
     const char* body =
@@ -235,6 +269,8 @@ int main(int, char**) {
     RUN_TEST(test_empty_ac_array_parses_to_zero_aircraft);
     RUN_TEST(test_dead_reckon_moves_aircraft_along_its_track);
     RUN_TEST(test_dead_reckon_leaves_stationary_aircraft_alone);
+    RUN_TEST(test_ground_obstacles_and_vehicles_are_not_traffic);
+    RUN_TEST(test_things_that_actually_fly_are_kept);
     RUN_TEST(test_nearest_to_point_finds_what_is_overhead);
     RUN_TEST(test_nearest_to_point_is_measured_from_home_not_the_radar_centre);
     RUN_TEST(test_nearest_to_point_on_an_empty_sky);
