@@ -399,13 +399,15 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
     if (!f.snap || f.inRange == 0) { drawPanelEmpty(g, f); return; }
 
     // Three lines per entry: callsign, then route/operator, then the numbers.
-    // The header already reports how many are in range, so the panel spends its
-    // last rows on aircraft rather than on a "+N more" footer.
+    // When more are in range than fit, the last slot is given over to the
+    // count instead of to a fourth aircraft: a row needs 35px and the tally
+    // needs 8, so squeezing both in would crush the rows.
     const int rowH = 35;
+    const int maxRows = (f.inRange > PANEL_ROWS) ? PANEL_ROWS - 1 : PANEL_ROWS;
     int y = HEADER_H + 4;
     int shown = 0;
 
-    for (int i = 0; i < f.snap->count && shown < PANEL_ROWS; i++) {
+    for (int i = 0; i < f.snap->count && shown < maxRows; i++) {
         const adsb::Aircraft& a = f.snap->ac[i];
         if (a.distKm > (float)f.rangeKm) continue;
 
@@ -427,6 +429,13 @@ void drawPanel(Arduino_GFX* g, const Frame& f) {
         }
         y += rowH;
         shown++;
+    }
+
+    int extra = f.inRange - shown;
+    if (extra > 0) {
+        char more[24];
+        snprintf(more, sizeof(more), "...and %d more", extra);
+        text(g, PANEL_X, y + 2, 1, C_TEXT_DIM, more);
     }
 }
 
