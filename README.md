@@ -36,7 +36,7 @@ works. No computer, no cloud account, no companion app, no API keys.
 |---|---|
 | [LilyGO T-Display-S3](https://github.com/Xinyuan-LilyGO/T-Display-S3) | ESP32-S3 with a 1.9" 320×170 screen. The non-touch version is fine. Both buttons used are on the board. |
 | USB-C cable | For flashing, then for power. Any phone charger will run it. |
-| 2.4 GHz WiFi | The ESP32-S3 can't see 5 GHz networks. |
+| 2.4 GHz WiFi | **5 GHz won't work.** The ESP32-S3 only has a 2.4 GHz radio. |
 | [PlatformIO](https://platformio.org/install) | The CLI, or the VS Code extension. |
 
 ## Getting started
@@ -65,6 +65,12 @@ Then edit `src/secrets.h`:
 // #define HOME_LAT 56.9496
 // #define HOME_LON 24.1052
 ```
+
+> **2.4 GHz only.** The ESP32-S3 has no 5 GHz radio, so it can't join a 5 GHz
+> network. If your router puts both bands under one name, that usually works:
+> the board just connects on 2.4 GHz. If it only offers 5 GHz, or 2.4 GHz is
+> turned off, enable a 2.4 GHz network (many routers can add a separate one,
+> such as `home-2g`) and use that name here.
 
 `secrets.h` is git-ignored, so your password and your address stay on your
 machine and on the board.
@@ -106,7 +112,7 @@ Both are saved to flash, so after a power cut it comes back where you left it.
 | Symptom | Try |
 |---|---|
 | Upload fails with a serial sync error | Hold **BOOT**, tap **RST**, release **BOOT**, then upload again. Close any open serial monitor first. |
-| `NO WIFI` | Check the SSID and password in `secrets.h` (both are case-sensitive), and make sure the network is 2.4 GHz. |
+| `NO WIFI` | Check the SSID and password in `secrets.h` (both are case-sensitive), and make sure the network is on 2.4 GHz. A 5 GHz-only network never shows up for the board. |
 | Header shows a weak signal (around `-80dBm` or worse) | It will still work, just more slowly: below that it polls less often and skips route lookups. Moving the board closer to the router helps most. |
 | Radar is empty | Coverage comes from volunteer receivers, so some areas are thin. Try a wider range, or check [adsb.lol](https://adsb.lol) for your area. |
 | Clock is an hour or two off | Set `TZ_STRING` in `src/config.h` to your timezone. The default is Latvia. |
