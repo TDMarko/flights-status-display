@@ -67,8 +67,9 @@
 
 // ---------------------------------------------------------------------------
 // Cities — button 1 (BOOT / GPIO0) cycles this list. Index 0 is the default.
-// Add your own: {"NAME", latitude, longitude}. Names render at text size 1,
-// so keep them under about 12 characters.
+// Add your own: name, city-centre lat/lon, then the main airport's IATA code,
+// ICAO code and lat/lon. Names render large in the header, so keep them under
+// about 10 characters.
 // ---------------------------------------------------------------------------
 struct City {
     const char* name;
@@ -133,11 +134,13 @@ static const int WEAK_RSSI_DBM = -80;
 static const uint32_t HTTP_TIMEOUT_WEAK_MS   = 20000;
 static const uint32_t FETCH_INTERVAL_WEAK_MS = 20000;
 static const uint32_t FETCH_BACKOFF_MAX_MS   = 60000;
-static const uint32_t WIFI_RETRY_MS     = 5000;
 // Association takes a few seconds, and a first attempt can legitimately fail.
 // Only after this many consecutive failures is it worth alarming the user.
 static const int WIFI_FAILURES_BEFORE_ALARM = 2;
 static const uint32_t BUTTON_DEBOUNCE_MS = 40;
+
+static const uint32_t WEATHER_INTERVAL_MS = 600000;  // METARs are issued every 30 min
+static const uint32_t WEATHER_RETRY_MS    = 60000;   // ... but retry sooner after a failure
 
 // ---------------------------------------------------------------------------
 // History trails
@@ -148,23 +151,19 @@ static const uint32_t BUTTON_DEBOUNCE_MS = 40;
 // stub at 200 km. Raise TRAIL_POINTS (in trails.h) for longer history; it
 // costs 8 bytes per point per aircraft.
 // ---------------------------------------------------------------------------
+static const uint32_t TRAIL_SAMPLE_MS  = 5000;
+static const uint32_t TRAIL_MAX_AGE_MS = 120000;  // forget an aircraft not seen this long
+
 // ---------------------------------------------------------------------------
 // Sweep
 //
 // Purely decorative. SWEEP_PERIOD_MS is one full revolution; set it to 0 to
-// turn the sweep off. The wedge is drawn as SWEEP_TAIL_STEPS lines fanned back
-// over SWEEP_TAIL_DEG, fading into the background - enough lines that there is
-// no visible gap between them out at the rim.
+// turn the sweep off. The wedge is SWEEP_TAIL_STEPS filled slivers fanned back
+// over SWEEP_TAIL_DEG, fading into the background.
 // ---------------------------------------------------------------------------
 static const uint32_t SWEEP_PERIOD_MS = 4000;
 static const int SWEEP_TAIL_STEPS = 63;
 static const float SWEEP_TAIL_DEG = 49.0f;
-
-static const uint32_t WEATHER_INTERVAL_MS = 600000;  // METARs are issued every 30 min
-static const uint32_t WEATHER_RETRY_MS    = 60000;   // ... but retry sooner after a failure
-
-static const uint32_t TRAIL_SAMPLE_MS  = 5000;
-static const uint32_t TRAIL_MAX_AGE_MS = 120000;  // forget an aircraft not seen this long
 
 // ---------------------------------------------------------------------------
 // Buttons (active low, internal pull-ups)
@@ -182,7 +181,6 @@ static const int RADAR_R      = 66;   // outer ring
 static const int RADAR_PLOT_R = 69;   // nothing on the face is drawn beyond this;
                                       // the 3px past the outer ring gives arrow
                                       // tips and trails somewhere to land
-static const int RADAR_MARGIN = 3;    // clearance from the header and the foot
 static const int PANEL_X      = 180;
 static const int PANEL_W      = 136;
 static const int PANEL_ROWS   = 4;    // aircraft listed in the side panel

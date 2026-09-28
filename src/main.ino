@@ -73,6 +73,11 @@ static volatile bool gHasNew = false;  // gPublished not yet picked up
 static volatile uint32_t gLastGoodMs = 0;
 static volatile bool gRefetchNow = false;
 
+// Bumped on every city change. A request started before the change finishes
+// after it, and its answer belongs to the old city: each fetch notes the
+// generation it started under and throws its result away if that has moved on.
+static volatile uint32_t gCityGen = 0;
+
 // Airport weather, refreshed far more slowly than the traffic.
 static char gWeatherLine[48] = "";
 static uint32_t gLastWeatherMs = 0;
@@ -173,7 +178,7 @@ static bool fetchAircraft(adsb::Snapshot &out) {
         if (WiFi.status() == WL_CONNECTED) Serial.println("fetch: failed");
         return false;
     }
-    if (!adsb::parse(body.c_str(), body.length(), out)) {
+    if (!adsb::parse(body.c_str(), body.length(), c, out)) {
         Serial.println("fetch: bad JSON");
         return false;
     }
@@ -183,26 +188,28 @@ static bool fetchAircraft(adsb::Snapshot &out) {
 // Looks up one callsign's origin/destination and remembers the answer, so a
 // route costs one request per aircraft ever, not one per refresh. The static
 // route files are laid out by the first two characters of the callsign.
-static void fetchOneRoute(const char *callsign) {
+static void fetchOneRoute(const char *callsign, uint32_t gen) {
     char url[160];
     snprintf(url, sizeof(url), "https://vrs-standing-data.adsb.lol/routes/%c%c/%s.json",
              callsign[0], callsign[1], callsign);
 
     String body;
     char route[routes::ROUTE_LEN];
-    if (httpGetBody(url, body) &&
-        routes::parseRouteBody(body.c_str(), body.length(), route, sizeof(route))) {
-        routes::store(callsign, route);
-        Serial.printf("route: %s %s\n", callsign, route);
-    } else {
-        // Remember the miss too, or every refresh would ask again.
-        routes::store(callsign, "");
-    }
+    bool ok = httpGetBody(url, body) &&
+              routes::parseRouteBody(body.c_str(), body.length(), route, sizeof(route));
+    if (ok) Serial.printf("route: %s %s\n", callsign, route);
+
+    // The renderer reads the cache mid-frame, so writes go under the lock.
+    xSemaphoreTake(gLock, portMAX_DELAY);
+    // Remember a miss too, or every refresh would ask again.
+    if (gen == gCityGen) routes::store(callsign, ok ? route : "");
+    xSemaphoreGive(gLock);
 }
 
 // The airport's METAR. Issued about every half hour, so polled every ten
 // minutes and re-read immediately when the city changes.
 static void fetchWeather() {
+    uint32_t gen = gCityGen;
     const City &city = CITIES[settings::cityIndex()];
     char url[160];
     snprintf(url, sizeof(url),
@@ -211,21 +218,26 @@ static void fetchWeather() {
     String body;
     weather::Report report;
     bool ok = httpGetBody(url, body) && weather::parse(body.c_str(), body.length(), report);
-    if (ok) {
-        char line[48];
-        weather::format(report, city.airport, line, sizeof(line));
-        xSemaphoreTake(gLock, portMAX_DELAY);
-        snprintf(gWeatherLine, sizeof(gWeatherLine), "%s", line);
-        xSemaphoreGive(gLock);
-        Serial.printf("metar: %s\n", line);
-    } else {
-        Serial.printf("metar: %s unavailable\n", city.icao);
+    char line[48] = "";
+    if (ok) weather::format(report, city.airport, line, sizeof(line));
+
+    xSemaphoreTake(gLock, portMAX_DELAY);
+    // The city changed while this was in flight: the report is for the wrong
+    // airport, and the new city's weather is already flagged as due.
+    bool current = (gen == gCityGen);
+    if (current) {
+        if (ok) snprintf(gWeatherLine, sizeof(gWeatherLine), "%s", line);
+        gLastWeatherMs = millis();
+        gWeatherStale = false;
+        // A failure must not lock the next attempt out for the full interval:
+        // the first try happens before WiFi has associated and always fails.
+        gWeatherEveryMs = ok ? WEATHER_INTERVAL_MS : WEATHER_RETRY_MS;
     }
-    gLastWeatherMs = millis();
-    gWeatherStale = false;
-    // A failure must not lock the next attempt out for the full interval: the
-    // first try happens before WiFi has associated and always fails.
-    gWeatherEveryMs = ok ? WEATHER_INTERVAL_MS : WEATHER_RETRY_MS;
+    xSemaphoreGive(gLock);
+    if (!current) return;
+
+    if (ok) Serial.printf("metar: %s\n", line);
+    else    Serial.printf("metar: %s unavailable\n", city.icao);
 }
 
 // Runs on the other core so a slow or failing request never stalls the radar.
@@ -259,6 +271,7 @@ static void fetchTask(void *) {
         if (!due) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
         gRefetchNow = false;
         lastAttempt = millis();
+        uint32_t gen = gCityGen;
 
         connectWiFi();
 
@@ -267,15 +280,22 @@ static void fetchTask(void *) {
             if (consecutiveFailures < 8) consecutiveFailures++;
         } else {
             consecutiveFailures = 0;
-            adsb::computeRelative(fresh, currentCentre());
             adsb::sortByDistance(fresh);
-            Serial.printf("fetch: %d aircraft, %d within %dkm\n", fresh.count,
-                          adsb::countWithin(fresh, currentRangeKm()), currentRangeKm());
+            // Checked under the lock the city switch takes, so a switch cannot
+            // land between the check and the publish.
             xSemaphoreTake(gLock, portMAX_DELAY);
-            gPublished = fresh;
-            gHasNew = true;
-            gLastGoodMs = millis();
+            bool current = (gen == gCityGen);
+            if (current) {
+                gPublished = fresh;
+                gHasNew = true;
+                gLastGoodMs = millis();
+            }
             xSemaphoreGive(gLock);
+            if (current) {
+                Serial.printf("fetch: %d aircraft (+%d not kept), %d within %dkm\n", fresh.count,
+                              fresh.overflow, adsb::countWithin(fresh, currentRangeKm()),
+                              currentRangeKm());
+            }
 
             // At most one route lookup per cycle: the panel fills in over the
             // next few refreshes instead of firing a burst of requests. On a
@@ -283,7 +303,7 @@ static void fetchTask(void *) {
             // request and costs a whole extra handshake.
             if (!linkIsWeak()) {
                 const char *pending = routes::nextPending(fresh, PANEL_ROWS);
-                if (pending) fetchOneRoute(pending);
+                if (pending) fetchOneRoute(pending, gen);
             }
         }
 
@@ -333,9 +353,12 @@ static void renderFrame() {
     if (gHasNew && xSemaphoreTake(gLock, 0) == pdTRUE) {
         gWorking = gPublished;
         gHasNew = false;
+        uint32_t fetchedAt = gLastGoodMs;
         xSemaphoreGive(gLock);
         gLastMotionMs = now;
-        adsb::computeRelative(gWorking, centre);
+        // The positions are already seconds old: bring them up to now, so the
+        // traffic carries on smoothly instead of stepping back on every fetch.
+        adsb::catchUp(gWorking, centre, (now - fetchedAt) / 1000.0);
     }
 
     radar_ui::Status status = currentStatus();
@@ -371,11 +394,17 @@ static void renderFrame() {
         }
     }
 
+    // Contacts that did not fit in the snapshot are all farther than the ones
+    // kept. When every kept one is inside the range, the dropped ones are too
+    // (near enough: the request radius is the range, rounded up to whole nmi).
+    int inRange = adsb::countWithin(gWorking, rangeKm);
+    if (gWorking.overflow > 0 && inRange == gWorking.count) inRange += gWorking.overflow;
+
     radar_ui::Frame frame{
         .cityName = city.name,
         .rangeKm = rangeKm,
         .snap = &gWorking,
-        .inRange = adsb::countWithin(gWorking, rangeKm),
+        .inRange = inRange,
         .status = status,
         .clock = clock,
         .airportCode = city.airport,
@@ -393,7 +422,12 @@ static void renderFrame() {
         .sweepDeg = SWEEP_PERIOD_MS ? (float)((now % SWEEP_PERIOD_MS) * 360.0 / SWEEP_PERIOD_MS)
                                     : -1.0f,
     };
+    // Held for the draw: the panel reads the route cache and the weather line,
+    // both of which the fetch task writes. The fetch task only ever holds the
+    // lock for a copy, so this never waits on the network.
+    xSemaphoreTake(gLock, portMAX_DELAY);
     radar_ui::draw(gfx, frame);
+    xSemaphoreGive(gLock);
     gfx->flush();
 
     static uint32_t frames = 0, statsSince = 0;
@@ -434,7 +468,11 @@ void setup() {
 void loop() {
     if (buttons::cityPressed()) {
         settings::nextCity();
+        xSemaphoreTake(gLock, portMAX_DELAY);
+        gCityGen++;              // anything in flight now belongs to the old city
+        gHasNew = false;
         gWorking.count = 0;      // the old city's traffic is meaningless here
+        gWorking.overflow = 0;
         trails::clear();         // and trails are offsets from the old centre
         routes::clear();         // free the cache for the new city's traffic
         gWeatherLine[0] = '\0';  // and the old airport's weather
@@ -442,6 +480,7 @@ void loop() {
         gWeatherEveryMs = WEATHER_INTERVAL_MS;
         gLastGoodMs = 0;
         gRefetchNow = true;
+        xSemaphoreGive(gLock);
     }
     if (buttons::rangePressed()) {
         settings::nextRange();

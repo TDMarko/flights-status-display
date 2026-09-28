@@ -87,6 +87,7 @@ static adsb::Snapshot withCallsigns(const char* const* names, int n) {
     for (int i = 0; i < n; i++) {
         memset(&s.ac[i], 0, sizeof(s.ac[i]));
         snprintf(s.ac[i].callsign, sizeof(s.ac[i].callsign), "%s", names[i]);
+        s.ac[i].hasFlight = names[i][0] != '\0';
     }
     return s;
 }
@@ -122,6 +123,15 @@ static void test_blank_callsigns_are_skipped() {
     TEST_ASSERT_EQUAL_INT(0, routes::cachedCount());
 }
 
+static void test_registration_stand_ins_are_not_looked_up() {
+    // No flight number, so the callsign is really a tail number: there is no
+    // route file for it and asking would only waste a handshake.
+    const char* names[] = {"YL-ABC", "BBB222"};
+    adsb::Snapshot s = withCallsigns(names, 2);
+    s.ac[0].hasFlight = false;
+    TEST_ASSERT_EQUAL_STRING("BBB222", routes::nextPending(s, 4));
+}
+
 static void test_a_full_cache_evicts_the_oldest_entry() {
     char cs[12];
     for (int i = 0; i < routes::MAX_ROUTES; i++) {
@@ -150,6 +160,7 @@ int main(int, char**) {
     RUN_TEST(test_next_pending_walks_nearest_first_and_stops_when_all_cached);
     RUN_TEST(test_next_pending_ignores_aircraft_beyond_the_panel);
     RUN_TEST(test_blank_callsigns_are_skipped);
+    RUN_TEST(test_registration_stand_ins_are_not_looked_up);
     RUN_TEST(test_a_full_cache_evicts_the_oldest_entry);
     return UNITY_END();
 }

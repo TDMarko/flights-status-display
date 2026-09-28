@@ -14,6 +14,7 @@ constexpr int CALLSIGN_LEN = 10;
 struct Aircraft {
     char hex[8];                 // ICAO 24-bit address, lower case
     char callsign[CALLSIGN_LEN]; // trailing padding stripped; falls back to registration, then hex
+    bool hasFlight;              // callsign is a real flight number, not a fallback
     char reg[10];                // tail number, empty when unknown
     char type[6];                // ICAO type designator, e.g. "B738"
     char category[4];            // ADS-B emitter category, e.g. "A3"
@@ -33,6 +34,7 @@ struct Aircraft {
 struct Snapshot {
     Aircraft ac[MAX_AIRCRAFT];
     int count = 0;
+    int overflow = 0;   // contacts the feed reported that did not fit in ac[]
 };
 
 // Decodes the JSON body. Aircraft without a position are dropped, as are
@@ -40,7 +42,12 @@ struct Snapshot {
 // (masts, towers, cranes), which are not traffic and never fly overhead.
 // Returns false when the body is not valid JSON or has no "ac" array, leaving
 // `out` untouched.
-bool parse(const char* json, size_t len, Snapshot& out);
+//
+// When there are more contacts than MAX_AIRCRAFT, the nearest to `centre` are
+// kept and the rest are counted in `overflow`: the feed is not ordered by
+// distance, so taking the first ones would drop aircraft right overhead.
+// distKm and bearingDeg are filled relative to `centre`.
+bool parse(const char* json, size_t len, geo::LatLon centre, Snapshot& out);
 
 // Fills distKm and bearingDeg for every aircraft, relative to the radar centre.
 void computeRelative(Snapshot& s, geo::LatLon centre);
@@ -51,6 +58,11 @@ void sortByDistance(Snapshot& s);
 // Advances every aircraft along its own track by dtSec, then recomputes
 // distance and bearing. Used to glide between fetches.
 void deadReckon(Snapshot& s, geo::LatLon centre, double dtSec);
+
+// Brings freshly parsed positions up to date: each aircraft is advanced by the
+// age of its own position report plus `sinceFetchSec`, the time since the
+// response arrived. Without it every fetch visibly pulls the traffic back.
+void catchUp(Snapshot& s, geo::LatLon centre, double sinceFetchSec);
 
 // How many are within rangeKm. Assumes computeRelative has run.
 int countWithin(const Snapshot& s, double rangeKm);

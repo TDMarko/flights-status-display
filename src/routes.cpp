@@ -84,6 +84,8 @@ void store(const char* callsign, const char* route) {
 const char* nextPending(const adsb::Snapshot& s, int maxConsider) {
     int limit = s.count < maxConsider ? s.count : maxConsider;
     for (int i = 0; i < limit; i++) {
+        // A registration or hex standing in for the callsign has no route file.
+        if (!s.ac[i].hasFlight) continue;
         const char* cs = s.ac[i].callsign;
         if (!cs[0]) continue;
         if (!find(cs)) return cs;

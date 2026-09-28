@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -28,14 +29,14 @@ static std::string loadFixture(const char* name) {
 static void test_parses_five_aircraft_from_a_real_response() {
     std::string body = loadFixture("riga_5ac.json");
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), s));
+    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), RIGA, s));
     TEST_ASSERT_EQUAL_INT(5, s.count);
 }
 
 static void test_strips_the_padding_adsb_lol_puts_after_callsigns() {
     std::string body = loadFixture("riga_1ac.json");
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), s));
+    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), RIGA, s));
     TEST_ASSERT_EQUAL_INT(1, s.count);
     TEST_ASSERT_EQUAL_STRING("PYR013", s.ac[0].callsign);
     TEST_ASSERT_EQUAL_STRING("SU-PAE", s.ac[0].reg);
@@ -46,7 +47,7 @@ static void test_strips_the_padding_adsb_lol_puts_after_callsigns() {
 static void test_keeps_position_and_kinematics() {
     std::string body = loadFixture("riga_1ac.json");
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), s));
+    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), RIGA, s));
     const adsb::Aircraft& a = s.ac[0];
     TEST_ASSERT_FLOAT_WITHIN(1e-4, 56.779404, a.lat);
     TEST_ASSERT_FLOAT_WITHIN(1e-4, 24.364414, a.lon);
@@ -61,7 +62,7 @@ static void test_keeps_position_and_kinematics() {
 static void test_compute_relative_then_sort_gives_nearest_first() {
     std::string body = loadFixture("riga_5ac.json");
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), s));
+    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), RIGA, s));
     adsb::computeRelative(s, RIGA);
     adsb::sortByDistance(s);
     for (int i = 1; i < s.count; i++) {
@@ -76,7 +77,7 @@ static void test_compute_relative_then_sort_gives_nearest_first() {
 static void test_count_within_range() {
     std::string body = loadFixture("riga_5ac.json");
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), s));
+    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), RIGA, s));
     adsb::computeRelative(s, RIGA);
     TEST_ASSERT_EQUAL_INT(5, adsb::countWithin(s, 200.0));
     TEST_ASSERT_EQUAL_INT(0, adsb::countWithin(s, 5.0));
@@ -88,7 +89,7 @@ static void test_aircraft_without_a_position_are_dropped() {
         "{\"ac\":[{\"hex\":\"aaa111\",\"flight\":\"NOPOS\"},"
         "{\"hex\":\"bbb222\",\"flight\":\"HASPOS\",\"lat\":57.0,\"lon\":24.0}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     TEST_ASSERT_EQUAL_INT(1, s.count);
     TEST_ASSERT_EQUAL_STRING("HASPOS", s.ac[0].callsign);
 }
@@ -98,7 +99,7 @@ static void test_ground_altitude_is_not_treated_as_a_number() {
         "{\"ac\":[{\"hex\":\"ccc333\",\"flight\":\"TAXI1\",\"lat\":56.92,"
         "\"lon\":23.97,\"alt_baro\":\"ground\",\"gs\":12.0,\"track\":90.0}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     TEST_ASSERT_EQUAL_INT(1, s.count);
     TEST_ASSERT_TRUE(s.ac[0].onGround);
     TEST_ASSERT_FLOAT_WITHIN(0.001, 0.0, s.ac[0].altFt);
@@ -109,45 +110,103 @@ static void test_callsign_falls_back_to_registration_then_hex() {
         "{\"ac\":[{\"hex\":\"ddd444\",\"r\":\"YL-ABC\",\"lat\":57.0,\"lon\":24.0},"
         "{\"hex\":\"eee555\",\"lat\":57.1,\"lon\":24.1}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     TEST_ASSERT_EQUAL_INT(2, s.count);
     TEST_ASSERT_EQUAL_STRING("YL-ABC", s.ac[0].callsign);
     TEST_ASSERT_EQUAL_STRING("eee555", s.ac[1].callsign);
 }
 
-static void test_more_aircraft_than_capacity_are_capped() {
+static void test_more_aircraft_than_capacity_keeps_the_nearest() {
+    // Listed farthest first, the way an unordered feed can arrive: keeping
+    // the first MAX_AIRCRAFT would throw away everything close to the centre.
+    const int total = adsb::MAX_AIRCRAFT + 12;
     std::string body = "{\"ac\":[";
-    for (int i = 0; i < adsb::MAX_AIRCRAFT + 12; i++) {
+    for (int i = 0; i < total; i++) {
         char one[160];
         snprintf(one, sizeof(one),
-                 "%s{\"hex\":\"f%05d\",\"flight\":\"T%03d\",\"lat\":%f,\"lon\":24.0}",
-                 i ? "," : "", i, i, 56.0 + i * 0.01);
+                 "%s{\"hex\":\"f%05d\",\"flight\":\"T%03d\",\"lat\":%f,\"lon\":24.1052}",
+                 i ? "," : "", i, i, 56.9496 + (total - i) * 0.01);
         body += one;
     }
     body += "]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), s));
+    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), RIGA, s));
     TEST_ASSERT_EQUAL_INT(adsb::MAX_AIRCRAFT, s.count);
+    TEST_ASSERT_EQUAL_INT(12, s.overflow);
+
+    // The 12 dropped are the 12 farthest, T000..T011.
+    for (int i = 0; i < s.count; i++) {
+        int n = atoi(s.ac[i].callsign + 1);
+        TEST_ASSERT_TRUE_MESSAGE(n >= 12, s.ac[i].callsign);
+    }
+}
+
+static void test_parse_fills_distance_and_bearing() {
+    std::string body = loadFixture("riga_1ac.json");
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body.c_str(), body.size(), RIGA, s));
+    TEST_ASSERT_FLOAT_WITHIN(1.5, 24.5, s.ac[0].distKm);
+    TEST_ASSERT_TRUE(s.ac[0].bearingDeg > 120.0 && s.ac[0].bearingDeg < 160.0);
+    TEST_ASSERT_EQUAL_INT(0, s.overflow);
+}
+
+static void test_only_a_real_flight_number_counts_as_a_flight() {
+    const char* body =
+        "{\"ac\":[{\"hex\":\"ddd444\",\"flight\":\"BTI1PA  \",\"lat\":57.0,\"lon\":24.0},"
+        "{\"hex\":\"eee555\",\"r\":\"YL-ABC\",\"lat\":57.1,\"lon\":24.1}]}";
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
+    TEST_ASSERT_TRUE(s.ac[0].hasFlight);
+    TEST_ASSERT_FALSE(s.ac[1].hasFlight);   // "YL-ABC" is a registration
+}
+
+static void test_catch_up_advances_by_each_reports_own_age() {
+    // Both head north at 360 kt (0.1852 km/s); one report is 10 s old, one fresh.
+    const char* body =
+        "{\"ac\":[{\"hex\":\"a00001\",\"flight\":\"OLD\",\"lat\":56.9496,\"lon\":24.1052,"
+        "\"gs\":360.0,\"track\":0.0,\"alt_baro\":10000,\"seen_pos\":10.0},"
+        "{\"hex\":\"a00002\",\"flight\":\"NEW\",\"lat\":56.9496,\"lon\":24.1052,"
+        "\"gs\":360.0,\"track\":0.0,\"alt_baro\":10000,\"seen_pos\":0.0}]}";
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
+    adsb::catchUp(s, RIGA, 2.0);
+    TEST_ASSERT_FLOAT_WITHIN(0.02, 2.222, s.ac[0].distKm);  // 10 s + 2 s
+    TEST_ASSERT_FLOAT_WITHIN(0.02, 0.370, s.ac[1].distKm);  // 2 s
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 0.0, s.ac[0].seenPosSec);
+
+    // A second call only adds its own interval: the report age is spent.
+    adsb::catchUp(s, RIGA, 0.0);
+    TEST_ASSERT_FLOAT_WITHIN(0.02, 2.222, s.ac[0].distKm);
+}
+
+static void test_catch_up_does_not_extrapolate_a_coasting_track() {
+    const char* body =
+        "{\"ac\":[{\"hex\":\"a00003\",\"flight\":\"GHOST\",\"lat\":56.9496,\"lon\":24.1052,"
+        "\"gs\":360.0,\"track\":0.0,\"alt_baro\":10000,\"seen_pos\":300.0}]}";
+    adsb::Snapshot s;
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
+    adsb::catchUp(s, RIGA, 0.0);
+    TEST_ASSERT_FLOAT_WITHIN(0.02, 5.556, s.ac[0].distKm);  // capped at 30 s
 }
 
 static void test_malformed_json_is_rejected() {
     adsb::Snapshot s;
     s.count = 7;
     const char* junk = "{\"ac\":[{\"hex\"";
-    TEST_ASSERT_FALSE(adsb::parse(junk, strlen(junk), s));
+    TEST_ASSERT_FALSE(adsb::parse(junk, strlen(junk), RIGA, s));
     TEST_ASSERT_EQUAL_INT(7, s.count);  // caller's previous snapshot is left alone
 }
 
 static void test_response_without_ac_array_is_rejected() {
     adsb::Snapshot s;
     const char* body = "{\"msg\":\"No error\",\"total\":0}";
-    TEST_ASSERT_FALSE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_FALSE(adsb::parse(body, strlen(body), RIGA, s));
 }
 
 static void test_empty_ac_array_parses_to_zero_aircraft() {
     adsb::Snapshot s;
     const char* body = "{\"ac\":[],\"total\":0}";
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     TEST_ASSERT_EQUAL_INT(0, s.count);
 }
 
@@ -156,7 +215,7 @@ static void test_dead_reckon_moves_aircraft_along_its_track() {
         "{\"ac\":[{\"hex\":\"aaa000\",\"flight\":\"NORTH1\",\"lat\":56.9496,"
         "\"lon\":24.1052,\"gs\":360.0,\"track\":0.0,\"alt_baro\":10000}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     adsb::computeRelative(s, RIGA);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 0.0, s.ac[0].distKm);
 
@@ -172,7 +231,7 @@ static void test_dead_reckon_leaves_stationary_aircraft_alone() {
         "{\"ac\":[{\"hex\":\"bbb000\",\"flight\":\"PARKED\",\"lat\":56.99,"
         "\"lon\":24.20,\"alt_baro\":\"ground\"}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     adsb::computeRelative(s, RIGA);
     float before = s.ac[0].distKm;
     adsb::deadReckon(s, RIGA, 300.0);
@@ -196,7 +255,7 @@ static void test_ground_obstacles_and_vehicles_are_not_traffic() {
         "{\"hex\":\"a00001\",\"flight\":\"REALJET\",\"category\":\"A3\","
         "\"lat\":56.96,\"lon\":24.12}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     TEST_ASSERT_EQUAL_INT(1, s.count);
     TEST_ASSERT_EQUAL_STRING("REALJET", s.ac[0].callsign);
     TEST_ASSERT_EQUAL_STRING("A3", s.ac[0].category);
@@ -213,7 +272,7 @@ static void test_things_that_actually_fly_are_kept() {
         "\"lat\":56.96,\"lon\":24.11},"
         "{\"hex\":\"n00001\",\"flight\":\"NOCAT\",\"lat\":56.97,\"lon\":24.13}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
     TEST_ASSERT_EQUAL_INT(3, s.count);
 }
 
@@ -223,7 +282,7 @@ static void test_nearest_to_point_finds_what_is_overhead() {
         "{\"ac\":[{\"hex\":\"aaa111\",\"flight\":\"FARAWAY\",\"lat\":57.30,\"lon\":24.60},"
         "{\"hex\":\"bbb222\",\"flight\":\"ABOVEME\",\"lat\":57.0001,\"lon\":24.2001}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
 
     geo::LatLon home = TEST_HOME;
     float km = -1.0f;
@@ -239,7 +298,7 @@ static void test_nearest_to_point_is_measured_from_home_not_the_radar_centre() {
     const char* body =
         "{\"ac\":[{\"hex\":\"ccc333\",\"flight\":\"OVERCITY\",\"lat\":56.9496,\"lon\":24.1052}]}";
     adsb::Snapshot s;
-    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), s));
+    TEST_ASSERT_TRUE(adsb::parse(body, strlen(body), RIGA, s));
 
     float km = -1.0f;
     adsb::nearestToPoint(s, TEST_HOME, km);
@@ -263,7 +322,11 @@ int main(int, char**) {
     RUN_TEST(test_aircraft_without_a_position_are_dropped);
     RUN_TEST(test_ground_altitude_is_not_treated_as_a_number);
     RUN_TEST(test_callsign_falls_back_to_registration_then_hex);
-    RUN_TEST(test_more_aircraft_than_capacity_are_capped);
+    RUN_TEST(test_more_aircraft_than_capacity_keeps_the_nearest);
+    RUN_TEST(test_parse_fills_distance_and_bearing);
+    RUN_TEST(test_only_a_real_flight_number_counts_as_a_flight);
+    RUN_TEST(test_catch_up_advances_by_each_reports_own_age);
+    RUN_TEST(test_catch_up_does_not_extrapolate_a_coasting_track);
     RUN_TEST(test_malformed_json_is_rejected);
     RUN_TEST(test_response_without_ac_array_is_rejected);
     RUN_TEST(test_empty_ac_array_parses_to_zero_aircraft);

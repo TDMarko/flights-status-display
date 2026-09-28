@@ -127,7 +127,7 @@ static adsb::Snapshot syntheticBusy(geo::LatLon centre) {
     }
     body += "]}";
     adsb::Snapshot s;
-    adsb::parse(body.c_str(), body.size(), s);
+    adsb::parse(body.c_str(), body.size(), centre, s);
     return s;
 }
 
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
 
     adsb::Snapshot real;
     std::string body = readFile(fixtures + "/riga_5ac.json");
-    if (!body.empty()) adsb::parse(body.c_str(), body.size(), real);
+    if (!body.empty()) adsb::parse(body.c_str(), body.size(), {CITIES[0].lat, CITIES[0].lon}, real);
 
     geo::LatLon riga{CITIES[0].lat, CITIES[0].lon};
     geo::LatLon stockholm = riga;

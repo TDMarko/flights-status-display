@@ -44,7 +44,7 @@ void buildFilter(JsonDocument& filter) {
 
 }  // namespace
 
-bool parse(const char* json, size_t len, Snapshot& out) {
+bool parse(const char* json, size_t len, geo::LatLon centre, Snapshot& out) {
     JsonDocument filter;
     buildFilter(filter);
 
@@ -58,8 +58,6 @@ bool parse(const char* json, size_t len, Snapshot& out) {
 
     Snapshot parsed;
     for (JsonObjectConst o : arr) {
-        if (parsed.count >= MAX_AIRCRAFT) break;
-
         JsonVariantConst lat = o["lat"];
         JsonVariantConst lon = o["lon"];
         if (!lat.is<double>() || !lon.is<double>()) continue;  // no position, nothing to draw
@@ -70,12 +68,13 @@ bool parse(const char* json, size_t len, Snapshot& out) {
         const char* cat = o["category"] | "";
         if (cat[0] == 'C' || cat[0] == 'c') continue;
 
-        Aircraft& a = parsed.ac[parsed.count];
+        Aircraft a;
         copyTrimmed(a.hex, sizeof(a.hex), o["hex"] | "");
         copyTrimmed(a.reg, sizeof(a.reg), o["r"] | "");
         copyTrimmed(a.type, sizeof(a.type), o["t"] | "");
         copyTrimmed(a.category, sizeof(a.category), cat);
         copyTrimmed(a.callsign, sizeof(a.callsign), o["flight"] | "");
+        a.hasFlight = a.callsign[0] != '\0';
         if (a.callsign[0] == '\0') copyTrimmed(a.callsign, sizeof(a.callsign), a.reg);
         if (a.callsign[0] == '\0') copyTrimmed(a.callsign, sizeof(a.callsign), a.hex);
 
@@ -91,10 +90,21 @@ bool parse(const char* json, size_t len, Snapshot& out) {
         a.trackDeg = numberOr(o["track"], 0.0f);
         a.baroRateFpm = numberOr(o["baro_rate"], 0.0f);
         a.seenPosSec = numberOr(o["seen_pos"], 0.0f);
-        a.distKm = 0.0f;
+        a.distKm = (float)geo::distanceKm(centre, {a.lat, a.lon});
         a.bearingDeg = 0.0f;
-        parsed.count++;
+
+        if (parsed.count < MAX_AIRCRAFT) {
+            parsed.ac[parsed.count++] = a;
+            continue;
+        }
+        // Full: this one replaces the farthest kept, if it is nearer.
+        int far = 0;
+        for (int i = 1; i < MAX_AIRCRAFT; i++)
+            if (parsed.ac[i].distKm > parsed.ac[far].distKm) far = i;
+        if (a.distKm < parsed.ac[far].distKm) parsed.ac[far] = a;
+        parsed.overflow++;
     }
+    computeRelative(parsed, centre);
 
     out = parsed;
     return true;
@@ -131,6 +141,22 @@ void deadReckon(Snapshot& s, geo::LatLon centre, double dtSec) {
                                          s.ac[i].gsKt, dtSec);
         s.ac[i].lat = moved.lat;
         s.ac[i].lon = moved.lon;
+    }
+    computeRelative(s, centre);
+}
+
+void catchUp(Snapshot& s, geo::LatLon centre, double sinceFetchSec) {
+    for (int i = 0; i < s.count; i++) {
+        Aircraft& a = s.ac[i];
+        // A report older than this is a coasting track, not a position worth
+        // projecting from.
+        double age = (a.seenPosSec < 30.0f ? a.seenPosSec : 30.0f) + sinceFetchSec;
+        if (!a.onGround && a.gsKt > 0.0f && age > 0.0) {
+            geo::LatLon moved = geo::advance({a.lat, a.lon}, a.trackDeg, a.gsKt, age);
+            a.lat = moved.lat;
+            a.lon = moved.lon;
+        }
+        a.seenPosSec = 0.0f;
     }
     computeRelative(s, centre);
 }

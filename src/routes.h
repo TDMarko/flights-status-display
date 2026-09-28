@@ -1,8 +1,9 @@
 #pragma once
 // Origin/destination lookup, cached.
 //
-// The aircraft feed carries no route, but adsb.lol answers
-// GET /api/0/route/<callsign> with the airport pair. A route does not change
+// The aircraft feed carries no route, but adsb.lol publishes one static file
+// per callsign (vrs-standing-data.adsb.lol/routes/<first two>/<callsign>.json)
+// holding the airport pair. A route does not change
 // during a flight, so each callsign is looked up once and remembered; a busy
 // sky costs one extra request per newly seen aircraft, not one per refresh.
 // Arduino-free apart from the HTTP call, which the caller makes.
@@ -32,8 +33,8 @@ const char* lookup(const char* callsign);
 // Remembers a result. Pass "" to record "the API has no route for this".
 void store(const char* callsign, const char* route);
 
-// The nearest aircraft in `s` that has no cache entry yet, or nullptr when
-// they all have one. Only the first `maxConsider` are examined, because only
+// The nearest aircraft in `s` with a real flight callsign and no cache entry
+// yet, or nullptr when there is none. Only the first `maxConsider` are examined, because only
 // those are ever shown in the side panel.
 const char* nextPending(const adsb::Snapshot& s, int maxConsider);
 
