@@ -44,8 +44,8 @@ works. No computer, no cloud account, no companion app, no API keys.
 **1. Get the code.**
 
 ```bash
-git clone https://github.com/<your-username>/flydar.git
-cd flydar
+git clone https://github.com/TDMarko/flights-status-display.git
+cd flights-status-display
 ```
 
 **2. Add your WiFi.** Copy the template:
