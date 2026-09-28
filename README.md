@@ -6,11 +6,9 @@ right now: where they are, where they came from, and where they're going.
 Runs standalone on a LilyGO T-Display-S3. Plug it into any USB charger and it
 works. No computer, no cloud account, no companion app, no API keys.
 
-<!--
-  PHOTO PLACEHOLDER: put a photo of the board on your desk at docs/photo.jpg
-  (roughly 1200px wide, landscape) and this line will pick it up.
--->
-![Flydar running on a LilyGO T-Display-S3](docs/photo.jpg)
+<p align="center">
+  <img src="docs/photo.jpg" alt="Flydar running on a LilyGO T-Display-S3" width="600">
+</p>
 
 ## What's on screen
 
